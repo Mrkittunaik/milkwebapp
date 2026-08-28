@@ -77,7 +77,13 @@
   .addr-row{
     margin-top:14px; display:flex; align-items:center; gap:6px;
     font-size:12.5px; font-weight:600; color:#3A3110; position:relative; z-index:1;
+    flex-wrap:nowrap; min-width:0;
   }
+  .addr-row span{flex-shrink:0;}
+  .addr-row #addrLabel{
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; flex:1 1 auto;
+  }
+  .addr-row .chev{flex-shrink:0;}
   .addr-row svg{flex-shrink:0;}
   .addr-row b{font-weight:700;}
   .addr-row .chev{margin-left:2px; opacity:.6;}
@@ -488,7 +494,7 @@
 
     <div class="addr-row" id="addrRow" style="cursor:pointer;">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#3A3110" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
-      Delivering to <b id="addrLabel">Home &middot; Kittu Nagar</b>
+      <span style="white-space:nowrap;">Delivering to</span> <b id="addrLabel">Home &middot; Kittu Nagar</b>
       <svg class="chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#3A3110" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
     </div>
 
