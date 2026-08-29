@@ -468,6 +468,61 @@
     cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px; font-size:13.5px;
   }
   .loc-btn.loading{opacity:.75; pointer-events:none;}
+
+  /* ---------- DETAILS SCREEN ---------- */
+  .det-block{
+    background:var(--card); border:1px solid var(--line); border-radius:var(--radius);
+    padding:14px; margin-bottom:12px;
+  }
+  .det-block-title{font-size:13px; font-weight:800; margin-bottom:10px;}
+  .det-addr-card{
+    display:flex; align-items:flex-start; gap:10px; padding:10px 12px; border-radius:var(--radius-sm);
+    border:1.5px solid var(--line); margin-bottom:8px; cursor:pointer; transition:border-color .15s, background .15s;
+  }
+  .det-addr-card.selected{border-color:var(--green-dim); background:var(--green-light);}
+  .det-addr-card .det-addr-ic{flex-shrink:0; margin-top:2px;}
+  .det-addr-card .det-addr-label{font-weight:700; font-size:13.5px;}
+  .det-addr-card .det-addr-full{font-size:12px; color:var(--muted); margin-top:2px; line-height:1.4;}
+  .det-addr-card .det-addr-radio{
+    width:18px; height:18px; border-radius:50%; border:2px solid var(--line); flex-shrink:0; margin-top:2px;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .det-addr-card.selected .det-addr-radio{border-color:var(--green-dim);}
+  .det-addr-card.selected .det-addr-radio::after{content:''; width:9px; height:9px; border-radius:50%; background:var(--green-dim);}
+  .det-add-btn{
+    width:100%; background:none; border:1.5px dashed var(--line); border-radius:var(--radius-sm);
+    padding:10px; font-weight:700; font-size:13px; color:var(--green-dim); cursor:pointer;
+    display:flex; align-items:center; justify-content:center; gap:6px;
+  }
+  .det-input{
+    width:100%; border:1.5px solid var(--line); border-radius:var(--radius-sm); padding:10px 12px;
+    font-family:inherit; font-size:13.5px; margin-bottom:8px; background:var(--bg); color:var(--ink); resize:vertical;
+  }
+  .det-input:last-child{margin-bottom:0;}
+  .det-input:focus{outline:none; border-color:var(--yellow-deep);}
+  .det-inline-actions{display:flex; gap:8px; margin-top:4px;}
+  .det-cancel-btn, .det-save-btn{
+    flex:1; padding:10px; border-radius:var(--radius-sm); font-weight:700; font-size:13px; border:none; cursor:pointer;
+  }
+  .det-cancel-btn{background:var(--card-hi); color:var(--muted);}
+  .det-save-btn{background:var(--green-dim); color:#fff;}
+  .det-note-chips{display:flex; flex-wrap:wrap; gap:8px;}
+  .det-chip{
+    border:1.5px solid var(--line); background:var(--bg); border-radius:20px; padding:7px 13px;
+    font-size:12px; font-weight:600; color:var(--ink); cursor:pointer;
+  }
+  .det-chip.selected{background:var(--yellow); border-color:var(--yellow-deep); color:var(--ink);}
+  .det-time-row{display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px;}
+  .time-chip.selected{background:var(--green-dim); border-color:var(--green-dim); color:#fff;}
+  .det-skip-row{display:flex; align-items:center; justify-content:space-between; gap:12px;}
+  .det-skip-title{font-weight:700; font-size:13px;}
+  .det-skip-sub{font-size:11.5px; color:var(--muted); margin-top:2px;}
+  .det-toggle{position:relative; display:inline-block; width:42px; height:24px; flex-shrink:0;}
+  .det-toggle input{opacity:0; width:0; height:0;}
+  .det-toggle-slider{position:absolute; inset:0; background:var(--line); border-radius:24px; transition:.2s; cursor:pointer;}
+  .det-toggle-slider::before{content:''; position:absolute; width:18px; height:18px; left:3px; top:3px; background:#fff; border-radius:50%; transition:.2s;}
+  .det-toggle input:checked + .det-toggle-slider{background:var(--green-dim);}
+  .det-toggle input:checked + .det-toggle-slider::before{transform:translateX(18px);}
   .loc-cancel{
     width:100%; padding:12px; margin-top:8px; border-radius:5px; border:none; background:transparent;
     color:var(--muted); font-weight:700; cursor:pointer; font-size:13px;
@@ -531,7 +586,7 @@
     </div>
 
     <!-- Live delivery ETA strip: shown only when an order is out for delivery -->
-    <div class="eta-strip" id="etaStrip" onclick="showScreen('orders')">
+    <div class="eta-strip" id="etaStrip" onclick="goToScreen('orders')">
       <span class="eta-dot"></span>
       <span id="etaLabel">Order out for delivery</span>
       <span class="eta-time" id="etaTime">-- min</span>
@@ -856,6 +911,83 @@
       <div class="cart-row"><span>Delivery</span><b class="free">FREE</b></div>
       <button class="pkg-btn ripple" id="checkoutBtn" style="margin-top:12px;">Proceed to Checkout</button>
     </div>
+  </div>
+
+  <!-- DETAILS SCREEN: address, contact, delivery note, plan timing -->
+  <div class="screen" id="screen-details">
+    <div class="screen-header-row" style="margin-top:2px;">
+      <div class="back-btn" data-goto="cart">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+      </div>
+      <div class="section-title" style="margin:0;">Delivery <span>Details</span></div>
+    </div>
+
+    <!-- Saved addresses -->
+    <div class="det-block">
+      <div class="det-block-title">Delivery address</div>
+      <div id="savedAddrList"></div>
+      <button class="det-add-btn" id="addNewAddrBtn" type="button">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+        Add new address
+      </button>
+    </div>
+
+    <!-- New address form (hidden until "Add new" tapped) -->
+    <div class="det-block" id="newAddrForm" style="display:none;">
+      <div class="det-block-title">New address</div>
+      <button class="loc-btn" id="detUseLocBtn" type="button" style="margin-bottom:10px;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
+        <span id="detUseLocBtnText">Use my current location</span>
+      </button>
+      <input class="det-input" id="newAddrLabel" placeholder="Label (Home, Work, Other)">
+      <textarea class="det-input" id="newAddrFull" placeholder="Full address (house no, street, area, landmark)" rows="2"></textarea>
+      <div class="det-inline-actions">
+        <button class="det-cancel-btn" id="cancelNewAddrBtn" type="button">Cancel</button>
+        <button class="det-save-btn" id="saveNewAddrBtn" type="button">Save address</button>
+      </div>
+    </div>
+
+    <!-- Contact -->
+    <div class="det-block">
+      <div class="det-block-title">Contact number</div>
+      <input class="det-input" id="detPhone" type="tel" placeholder="Mobile number" inputmode="numeric" maxlength="10">
+      <input class="det-input" id="detAltPhone" type="tel" placeholder="Alternate phone number (optional)" inputmode="numeric" maxlength="10">
+    </div>
+
+    <!-- Delivery note -->
+    <div class="det-block">
+      <div class="det-block-title">Note for delivery boy</div>
+      <div class="det-note-chips" id="detNoteChips">
+        <button class="det-chip" type="button" data-note="Leave outside the door">Leave outside</button>
+        <button class="det-chip" type="button" data-note="Hand it to security/watchman">Give to watchman</button>
+        <button class="det-chip" type="button" data-note="Call before arriving">Call before arriving</button>
+        <button class="det-chip" type="button" data-note="Ring the doorbell">Ring bell</button>
+      </div>
+      <textarea class="det-input" id="detNote" placeholder="Add a note (e.g. leave outside, gate code, floor no.)" rows="2" style="margin-top:8px;"></textarea>
+    </div>
+
+    <!-- Plan delivery timing (shown only for subscription/plan orders) -->
+    <div class="det-block" id="detTimingBlock" style="display:none;">
+      <div class="det-block-title">Daily delivery time</div>
+      <div class="det-time-row" id="detTimeChips">
+        <button class="det-chip time-chip" type="button" data-time="06:00">6:00 AM</button>
+        <button class="det-chip time-chip selected" type="button" data-time="07:00">7:00 AM</button>
+        <button class="det-chip time-chip" type="button" data-time="08:00">8:00 AM</button>
+        <button class="det-chip time-chip" type="button" data-time="22:00">10:00 PM</button>
+      </div>
+      <div class="det-skip-row">
+        <div>
+          <div class="det-skip-title">Skip tomorrow's delivery</div>
+          <div class="det-skip-sub">Going out of town? Pause just tomorrow's milk.</div>
+        </div>
+        <label class="det-toggle">
+          <input type="checkbox" id="detSkipTomorrow">
+          <span class="det-toggle-slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <button class="pay-cta ripple" id="detContinueBtn" style="margin-top:6px;">Save &amp; Continue to Payment</button>
   </div>
 
   <!-- WISHLIST SCREEN -->
@@ -1416,7 +1548,8 @@
         showToast('Your cart is empty');
         return;
       }
-      goToScreen('payment');
+      renderDetailsScreen();
+      goToScreen('details');
     });
   }
 
@@ -1542,6 +1675,183 @@
       }, { enableHighAccuracy:true, timeout:8000, maximumAge:60000 });
     });
   }
+
+  /* =========================================================
+     DETAILS SCREEN: saved addresses, add-new, contact, note, plan timing
+     Everything is saved together in one "Save & Continue" step.
+     Persists in-memory + localStorage-free (per privacy: no browser storage
+     required here, uses a simple in-page state object) so backend wiring
+     later just needs to POST this object on order creation.
+  ========================================================= */
+  const savedAddresses = [
+    { id:'addr1', label:'Home', full:'Flat 302, Kittu Nagar, Hyderabad', selected:true }
+  ];
+  let pendingCartHasPlan = false; // set true when a subscription/plan item is in cart
+
+  const orderDetails = {
+    addressId: 'addr1',
+    phone: '',
+    altPhone: '',
+    note: '',
+    deliveryTime: '07:00',
+    skipTomorrow: false
+  };
+
+  function renderSavedAddrList(){
+    const list = document.getElementById('savedAddrList');
+    if(!list) return;
+    list.innerHTML = '';
+    savedAddresses.forEach(addr=>{
+      const card = document.createElement('div');
+      card.className = 'det-addr-card' + (addr.id === orderDetails.addressId ? ' selected' : '');
+      card.dataset.id = addr.id;
+      card.innerHTML = `
+        <div class="det-addr-ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3A3110" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg></div>
+        <div style="flex:1;">
+          <div class="det-addr-label">${addr.label}</div>
+          <div class="det-addr-full">${addr.full}</div>
+        </div>
+        <div class="det-addr-radio"></div>
+      `;
+      card.addEventListener('click', ()=>{
+        orderDetails.addressId = addr.id;
+        renderSavedAddrList();
+      });
+      list.appendChild(card);
+    });
+  }
+
+  function cartHasPlanItem(){
+    return Object.values(cart).some(item => /plan|subscription|monthly|weekly/i.test(item.name || ''));
+  }
+
+  function renderDetailsScreen(){
+    renderSavedAddrList();
+    document.getElementById('detPhone').value = orderDetails.phone;
+    document.getElementById('detAltPhone').value = orderDetails.altPhone;
+    document.getElementById('detNote').value = orderDetails.note;
+    document.getElementById('detSkipTomorrow').checked = orderDetails.skipTomorrow;
+
+    const timingBlock = document.getElementById('detTimingBlock');
+    pendingCartHasPlan = cartHasPlanItem();
+    timingBlock.style.display = pendingCartHasPlan ? 'block' : 'none';
+
+    document.querySelectorAll('.time-chip').forEach(chip=>{
+      chip.classList.toggle('selected', chip.dataset.time === orderDetails.deliveryTime);
+    });
+  }
+
+  // Add new address toggle
+  const addNewAddrBtn = document.getElementById('addNewAddrBtn');
+  const newAddrForm = document.getElementById('newAddrForm');
+  const cancelNewAddrBtn = document.getElementById('cancelNewAddrBtn');
+  const saveNewAddrBtn = document.getElementById('saveNewAddrBtn');
+
+  if(addNewAddrBtn) addNewAddrBtn.addEventListener('click', ()=>{
+    newAddrForm.style.display = 'block';
+    newAddrForm.scrollIntoView({ behavior:'smooth', block:'nearest' });
+  });
+  if(cancelNewAddrBtn) cancelNewAddrBtn.addEventListener('click', ()=>{
+    newAddrForm.style.display = 'none';
+    document.getElementById('newAddrLabel').value = '';
+    document.getElementById('newAddrFull').value = '';
+  });
+  if(saveNewAddrBtn) saveNewAddrBtn.addEventListener('click', ()=>{
+    const label = document.getElementById('newAddrLabel').value.trim();
+    const full = document.getElementById('newAddrFull').value.trim();
+    if(!label || !full){
+      showToast('Please fill in both fields');
+      return;
+    }
+    const id = 'addr' + (savedAddresses.length + 1);
+    savedAddresses.push({ id, label, full });
+    orderDetails.addressId = id;
+    newAddrForm.style.display = 'none';
+    document.getElementById('newAddrLabel').value = '';
+    document.getElementById('newAddrFull').value = '';
+    renderSavedAddrList();
+    showToast('Address saved');
+  });
+
+  // "Use my current location" inside the details form -> reuses reverseGeocode()
+  const detUseLocBtn = document.getElementById('detUseLocBtn');
+  if(detUseLocBtn) detUseLocBtn.addEventListener('click', ()=>{
+    const btnText = document.getElementById('detUseLocBtnText');
+    if(!navigator.geolocation){
+      showToast('Geolocation not supported on this device');
+      return;
+    }
+    detUseLocBtn.classList.add('loading');
+    btnText.textContent = 'Fetching location...';
+    const spinner = document.createElement('span');
+    spinner.className = 'spinner';
+    detUseLocBtn.prepend(spinner);
+
+    navigator.geolocation.getCurrentPosition(async (pos)=>{
+      const { latitude, longitude } = pos.coords;
+      const label = await reverseGeocode(latitude, longitude);
+      document.getElementById('newAddrFull').value = label.replace(/<[^>]+>/g,'').replace('Current · ', '');
+      if(!document.getElementById('newAddrLabel').value) document.getElementById('newAddrLabel').value = 'Current location';
+      detUseLocBtn.classList.remove('loading');
+      btnText.textContent = 'Use my current location';
+      spinner.remove();
+      showToast('Location fetched');
+    }, (err)=>{
+      detUseLocBtn.classList.remove('loading');
+      btnText.textContent = 'Use my current location';
+      spinner.remove();
+      showToast(err && err.code === 1 ? 'Location permission denied' : 'Could not fetch live location');
+    }, { enableHighAccuracy:true, timeout:8000, maximumAge:60000 });
+  });
+
+  // Delivery note quick chips (fills the textarea, still editable)
+  document.querySelectorAll('#detNoteChips .det-chip').forEach(chip=>{
+    chip.addEventListener('click', ()=>{
+      document.querySelectorAll('#detNoteChips .det-chip').forEach(c=>c.classList.remove('selected'));
+      chip.classList.add('selected');
+      document.getElementById('detNote').value = chip.dataset.note;
+    });
+  });
+
+  // Plan delivery time chips
+  document.querySelectorAll('.time-chip').forEach(chip=>{
+    chip.addEventListener('click', ()=>{
+      document.querySelectorAll('.time-chip').forEach(c=>c.classList.remove('selected'));
+      chip.classList.add('selected');
+      orderDetails.deliveryTime = chip.dataset.time;
+    });
+  });
+
+  // Save & Continue -> validates, stores everything together, moves to Payment
+  const detContinueBtn = document.getElementById('detContinueBtn');
+  if(detContinueBtn) detContinueBtn.addEventListener('click', ()=>{
+    const phone = document.getElementById('detPhone').value.trim();
+    const altPhone = document.getElementById('detAltPhone').value.trim();
+    const note = document.getElementById('detNote').value.trim();
+    const skipTomorrow = document.getElementById('detSkipTomorrow').checked;
+
+    if(!/^\d{10}$/.test(phone)){
+      showToast('Enter a valid 10-digit mobile number');
+      return;
+    }
+    if(altPhone && !/^\d{10}$/.test(altPhone)){
+      showToast('Alternate number should be 10 digits');
+      return;
+    }
+
+    // Save everything at once
+    orderDetails.phone = phone;
+    orderDetails.altPhone = altPhone;
+    orderDetails.note = note;
+    orderDetails.skipTomorrow = skipTomorrow;
+
+    const selectedAddr = savedAddresses.find(a => a.id === orderDetails.addressId);
+    if(selectedAddr) setDeliveryAddress(`${selectedAddr.label} &middot; ${selectedAddr.full}`);
+
+    // orderDetails is now the single object to send to the backend with the order:
+    // { addressId, phone, altPhone, note, deliveryTime, skipTomorrow }
+    goToScreen('payment');
+  });
 
   /* =========================================================
      NAV FAB -> Cart, keep goToScreen wiring intact
