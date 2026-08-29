@@ -500,6 +500,13 @@
   }
   .det-input:last-child{margin-bottom:0;}
   .det-input:focus{outline:none; border-color:var(--yellow-deep);}
+  .det-field-row{display:flex; gap:8px; margin-bottom:8px;}
+  .det-field-row .det-input{margin-bottom:0;}
+  .det-geo-status{
+    display:flex; align-items:center; gap:6px; font-size:11.5px; color:var(--green-dim);
+    font-weight:700; margin-bottom:8px; padding:6px 10px; background:var(--green-light); border-radius:var(--radius-sm);
+  }
+  .det-geo-status .geo-dot{width:6px; height:6px; border-radius:50%; background:var(--green-dim); flex-shrink:0; animation:etaPulse 1.2s infinite ease-in-out;}
   .det-inline-actions{display:flex; gap:8px; margin-top:4px;}
   .det-cancel-btn, .det-save-btn{
     flex:1; padding:10px; border-radius:var(--radius-sm); font-weight:700; font-size:13px; border:none; cursor:pointer;
@@ -552,12 +559,103 @@
 
   .nav-item{transition:transform .15s;}
   .nav-item:active{transform:scale(.92);}
+
+  /* ---------- LOGIN GATE ---------- */
+  .login-gate{
+    position:fixed; inset:0; z-index:10000; background:var(--bg);
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    padding:32px 28px; max-width:480px; margin:0 auto;
+  }
+  .login-gate{display:none;}
+  .login-gate.show{display:flex;}
+  .login-logo{width:88px; height:88px; margin-bottom:18px;}
+  .login-logo img{width:100%; height:100%; object-fit:contain;}
+  .login-title{font-size:20px; font-weight:800; margin-bottom:4px; text-align:center;}
+  .login-sub{font-size:13px; color:var(--muted); text-align:center; margin-bottom:28px; line-height:1.5;}
+  .google-btn{
+    width:100%; display:flex; align-items:center; justify-content:center; gap:10px;
+    background:#fff; border:1.5px solid var(--line); border-radius:var(--radius);
+    padding:13px; font-weight:700; font-size:14px; color:var(--ink); cursor:pointer;
+  }
+  .google-btn:active{transform:scale(.98);}
+  .phone-login-btn{
+    width:100%; display:flex; align-items:center; justify-content:center; gap:10px;
+    background:var(--card-hi); border:1.5px solid var(--line); border-radius:var(--radius);
+    padding:13px; font-weight:700; font-size:14px; color:var(--ink); cursor:pointer; margin-top:10px;
+  }
+  .phone-login-btn:active{transform:scale(.98);}
+  .login-step{width:100%; display:none;}
+  .login-step.active{display:block;}
+  .login-divider{display:flex; align-items:center; gap:10px; margin:16px 0; color:var(--muted); font-size:12px; width:100%;}
+  .login-divider::before, .login-divider::after{content:''; flex:1; height:1px; background:var(--line);}
+  .login-gate-back{position:absolute; top:22px; left:22px; cursor:pointer; padding:6px;}
+  .login-gate-back svg{display:block;}
+  .login-otp-boxes{display:flex; gap:8px; justify-content:center; margin-bottom:16px;}
+  .login-otp-boxes input{
+    width:42px; height:48px; text-align:center; font-size:18px; font-weight:700;
+    border:1.5px solid var(--line); border-radius:var(--radius-sm); background:var(--bg); color:var(--ink);
+  }
+  .login-otp-boxes input:focus{outline:none; border-color:var(--yellow-deep);}
+  .login-link-btn{background:none; border:none; color:var(--green-dim); font-weight:700; font-size:12.5px; cursor:pointer; display:block; margin:12px auto 0; text-align:center;}
 </style>
 </head>
 <body>
+
+<!-- LOGIN GATE: hidden by default. Opened when a guest tries to check out,
+     buy a plan, or taps Account while logged out. -->
+<div class="login-gate" id="loginGate">
+  <div class="login-gate-back" id="loginGateBack">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+  </div>
+  <div class="login-logo"><img src="logo.png" alt="Pakka Doodhwala"></div>
+
+  <div class="login-step active" id="loginStepChoice">
+    <div class="login-title">Welcome to Pakka Doodhwala</div>
+    <div class="login-sub">Sign in to order fresh milk, paneer &amp; ghee delivered daily to your door.</div>
+    <button class="google-btn" id="googleSignInBtn" type="button">
+      <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3c-1.6 4.7-6.1 8-11.3 8-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.1 8 3l6-6C34 5.1 29.3 3 24 3 12.4 3 3 12.4 3 24s9.4 21 21 21 21-9.4 21-21c0-1.4-.1-2.7-.4-3.5Z"/><path fill="#FF3D00" d="M6.3 14.7 12.9 19c1.8-4.7 6.4-8 11.1-8 3.1 0 5.8 1.1 8 3l6-6C34 5.1 29.3 3 24 3c-8 0-14.8 4.6-17.7 11.7Z"/><path fill="#4CAF50" d="M24 45c5.2 0 9.9-2 13.4-5.2l-6.2-5.2c-2 1.5-4.6 2.4-7.2 2.4-5.2 0-9.6-3.3-11.2-8l-6.5 5C9.1 40.3 15.9 45 24 45Z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.2 4.2-4.1 5.6l6.2 5.2C40.9 36 44 30.5 44 24c0-1.4-.1-2.7-.4-3.5Z"/></svg>
+      Continue with Google
+    </button>
+    <div class="login-divider">or</div>
+    <button class="phone-login-btn" id="phoneLoginStartBtn" type="button">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92Z"/></svg>
+      Continue with mobile number
+    </button>
+  </div>
+
+  <div class="login-step" id="loginStepPhoneEntry">
+    <div class="login-title">Enter mobile number</div>
+    <div class="login-sub">We'll send a 4-digit OTP to verify it's you.</div>
+    <input class="det-input" id="phoneLoginInput" type="tel" placeholder="10-digit mobile number" inputmode="numeric" maxlength="10" style="text-align:center; font-size:16px; letter-spacing:1px;">
+    <button class="google-btn" id="phoneLoginSendOtpBtn" type="button" style="background:var(--green-dim); color:#fff; border:none; margin-top:6px;">Send OTP</button>
+  </div>
+
+  <div class="login-step" id="loginStepOtp">
+    <div class="login-title">Verify OTP</div>
+    <div class="login-sub" id="otpSentSub">Enter the 4-digit code sent to your number.</div>
+    <div class="login-otp-boxes">
+      <input type="tel" inputmode="numeric" maxlength="1" class="otp-box">
+      <input type="tel" inputmode="numeric" maxlength="1" class="otp-box">
+      <input type="tel" inputmode="numeric" maxlength="1" class="otp-box">
+      <input type="tel" inputmode="numeric" maxlength="1" class="otp-box">
+    </div>
+    <button class="google-btn" id="otpVerifyBtn" type="button" style="background:var(--green-dim); color:#fff; border:none;">Verify &amp; Continue</button>
+    <button class="login-link-btn" id="otpResendBtn" type="button">Resend OTP</button>
+  </div>
+
+  <div class="login-step" id="loginStepBindPhone">
+    <div class="login-title">Add your mobile number</div>
+    <div class="login-sub">We'll use this to send order &amp; delivery updates. You can add an alternate number later at checkout.</div>
+    <input class="det-input" id="bindPhoneInput" type="tel" placeholder="Enter 10-digit mobile number" inputmode="numeric" maxlength="10" style="text-align:center; font-size:16px; letter-spacing:1px;">
+    <button class="google-btn" id="bindPhoneContinueBtn" type="button" style="background:var(--green-dim); color:#fff; border:none; margin-top:6px;">Continue</button>
+  </div>
+</div>
+
 <div id="app">
 
+
   <!-- TOP BAR -->
+
   <div class="topbar">
     <div class="topbar-row">
       <div class="brand">
@@ -935,12 +1033,21 @@
     <!-- New address form (hidden until "Add new" tapped) -->
     <div class="det-block" id="newAddrForm" style="display:none;">
       <div class="det-block-title">New address</div>
-      <button class="loc-btn" id="detUseLocBtn" type="button" style="margin-bottom:10px;">
+      <button class="loc-btn" id="detUseLocBtn" type="button" style="margin-bottom:8px;">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
-        <span id="detUseLocBtnText">Use my current location</span>
+        <span id="detUseLocBtnText">Share live location</span>
       </button>
+      <div class="det-geo-status" id="detGeoStatus" style="display:none;"></div>
+
       <input class="det-input" id="newAddrLabel" placeholder="Label (Home, Work, Other)">
-      <textarea class="det-input" id="newAddrFull" placeholder="Full address (house no, street, area, landmark)" rows="2"></textarea>
+
+      <div class="det-field-row">
+        <input class="det-input" id="newAddrBuilding" placeholder="Building / house name / no." style="margin-bottom:0;">
+        <input class="det-input" id="newAddrFloor" placeholder="Floor" style="margin-bottom:0;">
+      </div>
+      <input class="det-input" id="newAddrRoom" placeholder="Room / flat no.">
+      <textarea class="det-input" id="newAddrFull" placeholder="Street, area, landmark" rows="2"></textarea>
+
       <div class="det-inline-actions">
         <button class="det-cancel-btn" id="cancelNewAddrBtn" type="button">Cancel</button>
         <button class="det-save-btn" id="saveNewAddrBtn" type="button">Save address</button>
@@ -1085,20 +1192,25 @@
 
   <!-- ACCOUNT SCREEN -->
   <div class="screen" id="screen-account">
-    <div class="account-header">
+    <div class="account-header" id="accountLoggedInView">
       <div class="account-avatar">K</div>
       <div>
         <div class="account-name">Kittu Rathod</div>
         <div class="account-phone">+91 98xxxxxx21</div>
       </div>
     </div>
-    <div class="settings-group">
+    <div class="account-guest-view" id="accountGuestView" style="display:none; text-align:center; padding:24px 10px;">
+      <div style="font-weight:800; font-size:16px; margin-bottom:4px;">You're browsing as a guest</div>
+      <div style="font-size:12.5px; color:var(--muted); margin-bottom:16px;">Log in to place orders, save addresses &amp; track deliveries.</div>
+      <button class="pkg-btn ripple" id="accountLoginBtn" style="width:100%;">Login</button>
+    </div>
+    <div class="settings-group" id="accountSettingsGroup">
       <div class="settings-row"><div class="settings-row-label">Home &middot; Kittu Nagar</div><div class="settings-row-sub">Delivery address</div></div>
       <div class="settings-row"><div class="settings-row-label">Manage Subscriptions</div></div>
       <div class="settings-row"><div class="settings-row-label">Payment Methods</div></div>
       <div class="settings-row"><div class="settings-row-label">Order History</div></div>
       <div class="settings-row"><div class="settings-row-label">Help &amp; Support</div></div>
-      <div class="settings-row"><div class="settings-row-label" style="color:var(--danger);">Log Out</div></div>
+      <div class="settings-row" id="accountLogoutRow"><div class="settings-row-label" style="color:var(--danger);">Log Out</div></div>
     </div>
   </div>
 
@@ -1159,6 +1271,16 @@
 <script>
   // ---- App state ----
   const cart = {}; // name -> {name, price, qty}
+
+  // ---- Auth/session state (hoisted so nav/checkout gating can use it) ----
+  const userSession = {
+    loggedIn: false,
+    googleId: null,
+    email: null,
+    name: null,
+    phone: null
+  };
+  let pendingAuthAction = null; // fn to run automatically once login succeeds
 
   // ---- Screen navigation ----
   function goToScreen(name){
@@ -1548,8 +1670,15 @@
         showToast('Your cart is empty');
         return;
       }
-      renderDetailsScreen();
-      goToScreen('details');
+      const proceedToDetails = ()=>{
+        renderDetailsScreen();
+        goToScreen('details');
+      };
+      if(!userSession.loggedIn){
+        openLoginGate(proceedToDetails);
+        return;
+      }
+      proceedToDetails();
     });
   }
 
@@ -1567,17 +1696,89 @@
         showToast('Your cart is empty');
         return;
       }
-      payNowBtn.textContent = 'Processing...';
-      payNowBtn.disabled = true;
-      setTimeout(()=>{
-        payNowBtn.textContent = 'Pay & Place Order';
-        payNowBtn.disabled = false;
-        document.getElementById('successOverlay').classList.add('show');
-        // clear cart
-        Object.keys(cart).forEach(k=>delete cart[k]);
-        renderCart();
-      }, 1100);
+      const selectedMethod = document.querySelector('.pay-method.selected');
+      const method = selectedMethod ? selectedMethod.dataset.method : 'upi';
+
+      if(method === 'cod'){
+        placeOrder('cod', null);
+        return;
+      }
+      launchPaymentGateway(method);
     });
+  }
+
+  /* =========================================================
+     PAYMENT GATEWAY: Razorpay integration point.
+     Swap RAZORPAY_KEY_ID with the real key from your backend/.env
+     once the /api/payments/create-order endpoint exists. Until then
+     this runs a realistic simulated flow so the UI/UX is fully wired.
+  ========================================================= */
+  const RAZORPAY_KEY_ID = 'rzp_test_REPLACE_WITH_REAL_KEY';
+
+  function getOrderTotalPaise(){
+    const totalText = (document.getElementById('payTotal') || {}).textContent || '₹0';
+    const rupees = parseInt(totalText.replace(/[^\d]/g,''), 10) || 0;
+    return rupees * 100;
+  }
+
+  function launchPaymentGateway(method){
+    payNowBtn.textContent = 'Processing...';
+    payNowBtn.disabled = true;
+
+    // Real integration (once backend order-create endpoint exists):
+    //   1. POST /api/payments/create-order { amount, currency:'INR' } -> { orderId }
+    //   2. Open Razorpay checkout with that orderId
+    //   3. On success, POST /api/payments/verify with the signature
+    //   4. Then call placeOrder(method, paymentRef)
+    if(window.Razorpay && RAZORPAY_KEY_ID.indexOf('REPLACE') === -1){
+      const rzp = new window.Razorpay({
+        key: RAZORPAY_KEY_ID,
+        amount: getOrderTotalPaise(),
+        currency: 'INR',
+        name: 'Pakka Doodhwala',
+        description: 'Order payment',
+        theme: { color: '#FDC202' },
+        handler: function(response){
+          placeOrder(method, response.razorpay_payment_id);
+        },
+        modal: {
+          ondismiss: function(){
+            payNowBtn.textContent = 'Pay & Place Order';
+            payNowBtn.disabled = false;
+            showToast('Payment cancelled');
+          }
+        }
+      });
+      rzp.open();
+      return;
+    }
+
+    // Simulated gateway flow (used until Razorpay script + real key are wired in)
+    setTimeout(()=>{
+      placeOrder(method, 'SIMULATED_PAY_' + Date.now());
+    }, 1100);
+  }
+
+  function placeOrder(method, paymentRef){
+    payNowBtn.textContent = 'Pay & Place Order';
+    payNowBtn.disabled = false;
+    document.getElementById('successOverlay').classList.add('show');
+
+    // Full order payload ready for POST /api/orders once backend exists:
+    // { items: cart, ...orderDetails, paymentMethod: method, paymentRef }
+    const orderPayload = Object.assign({}, orderDetails, {
+      items: cart,
+      paymentMethod: method,
+      paymentRef: paymentRef || null
+    });
+    window.__lastOrderPayload = orderPayload; // inspectable for wiring/testing
+
+    // Demo: start the home-topbar ETA countdown as if backend just marked
+    // this order "out for delivery" with a 40-minute estimate.
+    startDeliveryEta(40);
+
+    Object.keys(cart).forEach(k=>delete cart[k]);
+    renderCart();
   }
 
   const successDoneBtn = document.getElementById('successDoneBtn');
@@ -1746,35 +1947,64 @@
   const newAddrForm = document.getElementById('newAddrForm');
   const cancelNewAddrBtn = document.getElementById('cancelNewAddrBtn');
   const saveNewAddrBtn = document.getElementById('saveNewAddrBtn');
+  let pendingAddrCoords = null; // { lat, lng, accuracy } captured from live location
+
+  function resetNewAddrForm(){
+    newAddrForm.style.display = 'none';
+    document.getElementById('newAddrLabel').value = '';
+    document.getElementById('newAddrBuilding').value = '';
+    document.getElementById('newAddrFloor').value = '';
+    document.getElementById('newAddrRoom').value = '';
+    document.getElementById('newAddrFull').value = '';
+    document.getElementById('detGeoStatus').style.display = 'none';
+    pendingAddrCoords = null;
+  }
 
   if(addNewAddrBtn) addNewAddrBtn.addEventListener('click', ()=>{
     newAddrForm.style.display = 'block';
     newAddrForm.scrollIntoView({ behavior:'smooth', block:'nearest' });
   });
-  if(cancelNewAddrBtn) cancelNewAddrBtn.addEventListener('click', ()=>{
-    newAddrForm.style.display = 'none';
-    document.getElementById('newAddrLabel').value = '';
-    document.getElementById('newAddrFull').value = '';
-  });
+  if(cancelNewAddrBtn) cancelNewAddrBtn.addEventListener('click', resetNewAddrForm);
+
   if(saveNewAddrBtn) saveNewAddrBtn.addEventListener('click', ()=>{
     const label = document.getElementById('newAddrLabel').value.trim();
+    const building = document.getElementById('newAddrBuilding').value.trim();
+    const floor = document.getElementById('newAddrFloor').value.trim();
+    const room = document.getElementById('newAddrRoom').value.trim();
     const full = document.getElementById('newAddrFull').value.trim();
-    if(!label || !full){
-      showToast('Please fill in both fields');
-      return;
-    }
+
+    if(!label){ showToast('Please add a label (Home, Work, Other)'); return; }
+    if(!pendingAddrCoords){ showToast('Please share live location first'); return; }
+    if(!building){ showToast('Please enter building / house name'); return; }
+    if(!floor){ showToast('Please enter floor'); return; }
+    if(!room){ showToast('Please enter room / flat no.'); return; }
+
+    const fullDisplay = [
+      `Room ${room}, Floor ${floor}`,
+      building,
+      full
+    ].filter(Boolean).join(', ');
+
     const id = 'addr' + (savedAddresses.length + 1);
-    savedAddresses.push({ id, label, full });
+    savedAddresses.push({
+      id, label, full: fullDisplay,
+      building, floor, room,
+      lat: pendingAddrCoords.lat,
+      lng: pendingAddrCoords.lng,
+      accuracy: pendingAddrCoords.accuracy
+    });
     orderDetails.addressId = id;
-    newAddrForm.style.display = 'none';
-    document.getElementById('newAddrLabel').value = '';
-    document.getElementById('newAddrFull').value = '';
+    resetNewAddrForm();
     renderSavedAddrList();
-    showToast('Address saved');
+    showToast('Address saved with live location');
   });
 
-  // "Use my current location" inside the details form -> reuses reverseGeocode()
+  // "Share live location" inside the details form -> captures exact
+  // GPS coordinates (not just the area name) and reverse-geocodes the
+  // street/area/landmark text as a starting point the user can edit.
   const detUseLocBtn = document.getElementById('detUseLocBtn');
+  const detGeoStatus = document.getElementById('detGeoStatus');
+
   if(detUseLocBtn) detUseLocBtn.addEventListener('click', ()=>{
     const btnText = document.getElementById('detUseLocBtnText');
     if(!navigator.geolocation){
@@ -1782,26 +2012,34 @@
       return;
     }
     detUseLocBtn.classList.add('loading');
-    btnText.textContent = 'Fetching location...';
+    btnText.textContent = 'Fetching live location...';
     const spinner = document.createElement('span');
     spinner.className = 'spinner';
     detUseLocBtn.prepend(spinner);
 
     navigator.geolocation.getCurrentPosition(async (pos)=>{
-      const { latitude, longitude } = pos.coords;
+      const { latitude, longitude, accuracy } = pos.coords;
+      pendingAddrCoords = { lat: latitude, lng: longitude, accuracy };
+
       const label = await reverseGeocode(latitude, longitude);
       document.getElementById('newAddrFull').value = label.replace(/<[^>]+>/g,'').replace('Current · ', '');
       if(!document.getElementById('newAddrLabel').value) document.getElementById('newAddrLabel').value = 'Current location';
+
+      detGeoStatus.style.display = 'flex';
+      detGeoStatus.innerHTML = `<span class="geo-dot"></span> Live location captured (±${Math.round(accuracy)}m) — now add building, floor &amp; room`;
+
       detUseLocBtn.classList.remove('loading');
-      btnText.textContent = 'Use my current location';
+      btnText.textContent = 'Share live location';
       spinner.remove();
-      showToast('Location fetched');
+      document.getElementById('newAddrBuilding').focus();
     }, (err)=>{
       detUseLocBtn.classList.remove('loading');
-      btnText.textContent = 'Use my current location';
+      btnText.textContent = 'Share live location';
       spinner.remove();
-      showToast(err && err.code === 1 ? 'Location permission denied' : 'Could not fetch live location');
-    }, { enableHighAccuracy:true, timeout:8000, maximumAge:60000 });
+      pendingAddrCoords = null;
+      detGeoStatus.style.display = 'none';
+      showToast(err && err.code === 1 ? 'Location permission denied — turn it on to add an address' : 'Could not fetch live location, try again');
+    }, { enableHighAccuracy:true, timeout:8000, maximumAge:0 });
   });
 
   // Delivery note quick chips (fills the textarea, still editable)
@@ -1981,6 +2219,238 @@
   // expose for backend-driven calls later (e.g. after socket.io "order:outForDelivery" event)
   window.startDeliveryEta = startDeliveryEta;
   window.stopDeliveryEta = stopDeliveryEta;
+
+  /* =========================================================
+     LOGIN GATE: opened on-demand (not on app load).
+     Triggers: guest taps Account, or guest taps checkout/buy-plan.
+     Paths: Google Sign-In -> bind phone, OR phone number -> OTP.
+     Real integration points:
+       - Google: load https://accounts.google.com/gsi/client, replace
+         mockGoogleSignIn() with google.accounts.id.initialize/prompt,
+         send the credential JWT to POST /api/auth/google.
+       - Phone: POST /api/auth/send-otp, then POST /api/auth/verify-otp.
+  ========================================================= */
+  function openLoginGate(onSuccess){
+    pendingAuthAction = typeof onSuccess === 'function' ? onSuccess : null;
+    document.getElementById('loginStepChoice').classList.add('active');
+    document.getElementById('loginStepPhoneEntry').classList.remove('active');
+    document.getElementById('loginStepOtp').classList.remove('active');
+    document.getElementById('loginStepBindPhone').classList.remove('active');
+    document.getElementById('loginGate').classList.add('show');
+  }
+  function closeLoginGate(){
+    document.getElementById('loginGate').classList.remove('show');
+    pendingAuthAction = null;
+  }
+  function completeLogin(){
+    document.getElementById('loginGate').classList.remove('show');
+    showToast('Welcome, ' + (userSession.name || 'there') + '!');
+    renderAccountScreen();
+    if(pendingAuthAction){
+      const action = pendingAuthAction;
+      pendingAuthAction = null;
+      action();
+    }
+  }
+  function renderAccountScreen(){
+    const loggedInView = document.getElementById('accountLoggedInView');
+    const guestView = document.getElementById('accountGuestView');
+    const settingsGroup = document.getElementById('accountSettingsGroup');
+    if(!loggedInView) return;
+    if(userSession.loggedIn){
+      loggedInView.style.display = 'flex';
+      guestView.style.display = 'none';
+      settingsGroup.style.display = 'block';
+      const accName = document.querySelector('.account-name');
+      const accPhone = document.querySelector('.account-phone');
+      const accAvatar = document.querySelector('.account-avatar');
+      if(accName) accName.textContent = userSession.name || 'Pakka Doodhwala User';
+      if(accPhone && userSession.phone) accPhone.textContent = '+91 ' + userSession.phone.slice(0,2) + 'xxxxxx' + userSession.phone.slice(-2);
+      if(accAvatar) accAvatar.textContent = (userSession.name || 'U').charAt(0);
+    } else {
+      loggedInView.style.display = 'none';
+      guestView.style.display = 'block';
+      settingsGroup.style.display = 'none';
+    }
+  }
+
+  const loginGateBack = document.getElementById('loginGateBack');
+  if(loginGateBack) loginGateBack.addEventListener('click', closeLoginGate);
+
+  // ---- Google path ----
+  function mockGoogleSignIn(){
+    // Swap for real Google Identity Services call:
+    // google.accounts.id.initialize({ client_id: 'YOUR_CLIENT_ID', callback: (r) => handleGoogleCredential(r.credential) });
+    // google.accounts.id.prompt();
+    return Promise.resolve({ googleId: 'demo_google_id', email: 'user@gmail.com', name: 'Kittu Rathod' });
+  }
+
+  const googleSignInBtn = document.getElementById('googleSignInBtn');
+  if(googleSignInBtn) googleSignInBtn.addEventListener('click', async ()=>{
+    googleSignInBtn.disabled = true;
+    googleSignInBtn.textContent = 'Signing in...';
+    try{
+      const profile = await mockGoogleSignIn();
+      userSession.googleId = profile.googleId;
+      userSession.email = profile.email;
+      userSession.name = profile.name;
+      if(userSession.phone){
+        // Already bound a number previously in this session -> straight in
+        userSession.loggedIn = true;
+        completeLogin();
+      } else {
+        document.getElementById('loginStepChoice').classList.remove('active');
+        document.getElementById('loginStepBindPhone').classList.add('active');
+      }
+    } catch(err){
+      showToast('Google sign-in failed, please try again');
+    } finally {
+      googleSignInBtn.disabled = false;
+      googleSignInBtn.textContent = 'Continue with Google';
+    }
+  });
+
+  const bindPhoneContinueBtn = document.getElementById('bindPhoneContinueBtn');
+  if(bindPhoneContinueBtn) bindPhoneContinueBtn.addEventListener('click', ()=>{
+    const phone = document.getElementById('bindPhoneInput').value.trim();
+    if(!/^\d{10}$/.test(phone)){
+      showToast('Enter a valid 10-digit mobile number');
+      return;
+    }
+    userSession.phone = phone;
+    userSession.loggedIn = true;
+    orderDetails.phone = phone; // pre-fill checkout contact number
+    // Real integration point: POST { googleId, email, phone } to /api/auth/bind-phone
+    completeLogin();
+  });
+
+  // ---- Phone + OTP path ----
+  const phoneLoginStartBtn = document.getElementById('phoneLoginStartBtn');
+  if(phoneLoginStartBtn) phoneLoginStartBtn.addEventListener('click', ()=>{
+    document.getElementById('loginStepChoice').classList.remove('active');
+    document.getElementById('loginStepPhoneEntry').classList.add('active');
+  });
+
+  let otpPendingPhone = null;
+
+  const phoneLoginSendOtpBtn = document.getElementById('phoneLoginSendOtpBtn');
+  if(phoneLoginSendOtpBtn) phoneLoginSendOtpBtn.addEventListener('click', ()=>{
+    const phone = document.getElementById('phoneLoginInput').value.trim();
+    if(!/^\d{10}$/.test(phone)){
+      showToast('Enter a valid 10-digit mobile number');
+      return;
+    }
+    otpPendingPhone = phone;
+    // Real integration point: POST /api/auth/send-otp { phone }
+    document.getElementById('otpSentSub').textContent = 'Enter the 4-digit code sent to +91 ' + phone;
+    document.getElementById('loginStepPhoneEntry').classList.remove('active');
+    document.getElementById('loginStepOtp').classList.add('active');
+    document.querySelectorAll('.otp-box').forEach(b=> b.value = '');
+    const firstBox = document.querySelector('.otp-box');
+    if(firstBox) firstBox.focus();
+    showToast('OTP sent (demo: enter any 4 digits)');
+  });
+
+  // Auto-advance between OTP boxes
+  document.querySelectorAll('.otp-box').forEach((box, idx, all)=>{
+    box.addEventListener('input', ()=>{
+      box.value = box.value.replace(/\D/g,'').slice(0,1);
+      if(box.value && all[idx+1]) all[idx+1].focus();
+    });
+    box.addEventListener('keydown', (e)=>{
+      if(e.key === 'Backspace' && !box.value && all[idx-1]) all[idx-1].focus();
+    });
+  });
+
+  const otpResendBtn = document.getElementById('otpResendBtn');
+  if(otpResendBtn) otpResendBtn.addEventListener('click', ()=>{
+    // Real integration point: POST /api/auth/send-otp { phone: otpPendingPhone } again
+    showToast('OTP resent');
+  });
+
+  const otpVerifyBtn = document.getElementById('otpVerifyBtn');
+  if(otpVerifyBtn) otpVerifyBtn.addEventListener('click', ()=>{
+    const code = Array.from(document.querySelectorAll('.otp-box')).map(b=>b.value).join('');
+    if(code.length !== 4){
+      showToast('Enter the full 4-digit OTP');
+      return;
+    }
+    // Real integration point: POST /api/auth/verify-otp { phone: otpPendingPhone, code }
+    userSession.phone = otpPendingPhone;
+    userSession.loggedIn = true;
+    orderDetails.phone = otpPendingPhone;
+    completeLogin();
+  });
+
+  // ---- Account screen: Login button (guest) + Log out ----
+  const accountLoginBtn = document.getElementById('accountLoginBtn');
+  if(accountLoginBtn) accountLoginBtn.addEventListener('click', ()=> openLoginGate());
+
+  const accountLogoutRow = document.getElementById('accountLogoutRow');
+  if(accountLogoutRow) accountLogoutRow.addEventListener('click', ()=>{
+    userSession.loggedIn = false;
+    userSession.googleId = null;
+    userSession.email = null;
+    userSession.name = null;
+    userSession.phone = null;
+    renderAccountScreen();
+    showToast('Logged out');
+    goToScreen('home');
+  });
+
+  // Render initial (guest) account state on load
+  renderAccountScreen();
+
+  // ---- Gate: Account tab tap while logged out ----
+  document.querySelectorAll('.nav-item[data-screen="account"]').forEach(item=>{
+    item.addEventListener('click', (e)=>{
+      if(!userSession.loggedIn){
+        e.stopImmediatePropagation();
+        openLoginGate(()=> goToScreen('account'));
+      }
+    }, true); // capture phase: run before the normal goToScreen('account') handler
+  });
+
+  /* =========================================================
+     BACKGROUND LOCATION TRACKING (delivery-boy side scaffold)
+     This customer app only needs to READ live delivery-boy location
+     (via socket.io once backend exists). The functions below are the
+     scaffold for the separate delivery-boy app/PWA, kept here so the
+     pattern is documented in one place:
+     - Foreground: navigator.geolocation.watchPosition (works in any browser tab)
+     - Background (screen locked / app backgrounded): requires either
+       a native wrapper (Capacitor/Cordova geolocation background plugin)
+       or a installed PWA using periodic Background Sync + a server push;
+       plain mobile browser tabs cannot reliably track location once
+       backgrounded, so ship the delivery-boy app as an installed PWA
+       or a thin native shell for this to work reliably.
+  ========================================================= */
+  let deliveryWatchId = null;
+
+  function startForegroundLocationTracking(onUpdate){
+    if(!navigator.geolocation){
+      showToast('Geolocation not supported on this device');
+      return;
+    }
+    deliveryWatchId = navigator.geolocation.watchPosition((pos)=>{
+      const { latitude, longitude } = pos.coords;
+      // Real integration: emit via socket.io, e.g.
+      // socket.emit('deliveryBoy:location', { orderId, lat: latitude, lng: longitude });
+      if(typeof onUpdate === 'function') onUpdate(latitude, longitude);
+    }, (err)=>{
+      showToast('Could not access live location');
+    }, { enableHighAccuracy:true, maximumAge:5000, timeout:10000 });
+  }
+
+  function stopForegroundLocationTracking(){
+    if(deliveryWatchId !== null){
+      navigator.geolocation.clearWatch(deliveryWatchId);
+      deliveryWatchId = null;
+    }
+  }
+
+  window.startForegroundLocationTracking = startForegroundLocationTracking;
+  window.stopForegroundLocationTracking = stopForegroundLocationTracking;
 </script>
 </body>
 </html>
