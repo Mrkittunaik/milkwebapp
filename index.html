@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
 <title>Pakka Doodhwala</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <style>
   :root{
     --bg:#FFFDF6;
@@ -36,20 +38,18 @@
   input, textarea, [contenteditable="true"]{
     -webkit-user-select:text; user-select:text; -webkit-touch-callout:default;
   }
-  /* delivery ETA strip on topbar */
-  .eta-strip{
-    display:none; align-items:center; gap:8px; margin-top:10px; padding:8px 12px;
-    border-radius:5px; font-weight:700; font-size:12.5px; position:relative; z-index:1;
-    color:#fff; transition:background .4s ease;
+  /* delivery ETA — plain colored text inline in the topbar row, no card/bg */
+  .eta-text{
+    display:none; align-items:center; gap:4px; font-weight:800; font-size:12px;
+    position:relative; z-index:1; cursor:pointer; white-space:nowrap;
   }
-  .eta-strip.show{display:flex;}
-  .eta-strip.red{background:var(--danger);}
-  .eta-strip.amber{background:#E8A400;}
-  .eta-strip.green{background:var(--green-dim);}
-  .eta-strip .eta-dot{width:8px; height:8px; border-radius:50%; background:#fff; flex-shrink:0; animation:etaPulse 1.2s infinite ease-in-out;}
+  .eta-text.show{display:flex;}
+  .eta-text.red{color:#B33224;}
+  .eta-text.amber{color:#8A5900;}
+  .eta-text.green{color:var(--green-dim);}
+  .eta-text .eta-dot{width:6px; height:6px; border-radius:50%; background:currentColor; flex-shrink:0; animation:etaPulse 1.2s infinite ease-in-out;}
   @keyframes etaPulse{0%,100%{opacity:1; transform:scale(1);} 50%{opacity:.4; transform:scale(.7);}}
-  .eta-strip .eta-time{margin-left:auto; font-weight:800;}
-  .eta-strip.arrived{animation:etaArrive .6s ease;}
+  .eta-text.arrived{animation:etaArrive .6s ease;}
   @keyframes etaArrive{0%{transform:scale(1);} 30%{transform:scale(1.04);} 100%{transform:scale(1);}}
   .delivery-anim-overlay{
     position:fixed; inset:0; background:rgba(43,36,16,.55); z-index:9999;
@@ -507,6 +507,11 @@
     font-weight:700; margin-bottom:8px; padding:6px 10px; background:var(--green-light); border-radius:var(--radius-sm);
   }
   .det-geo-status .geo-dot{width:6px; height:6px; border-radius:50%; background:var(--green-dim); flex-shrink:0; animation:etaPulse 1.2s infinite ease-in-out;}
+  .det-geo-map{
+    width:100%; height:180px; border-radius:var(--radius-sm); margin-bottom:10px;
+    overflow:hidden; border:1.5px solid var(--line);
+  }
+  .det-geo-map .leaflet-control-attribution{font-size:9px;}
   .det-inline-actions{display:flex; gap:8px; margin-top:4px;}
   .det-cancel-btn, .det-save-btn{
     flex:1; padding:10px; border-radius:var(--radius-sm); font-weight:700; font-size:13px; border:none; cursor:pointer;
@@ -524,12 +529,11 @@
   .det-skip-row{display:flex; align-items:center; justify-content:space-between; gap:12px;}
   .det-skip-title{font-weight:700; font-size:13px;}
   .det-skip-sub{font-size:11.5px; color:var(--muted); margin-top:2px;}
-  .det-toggle{position:relative; display:inline-block; width:42px; height:24px; flex-shrink:0;}
-  .det-toggle input{opacity:0; width:0; height:0;}
-  .det-toggle-slider{position:absolute; inset:0; background:var(--line); border-radius:24px; transition:.2s; cursor:pointer;}
-  .det-toggle-slider::before{content:''; position:absolute; width:18px; height:18px; left:3px; top:3px; background:#fff; border-radius:50%; transition:.2s;}
-  .det-toggle input:checked + .det-toggle-slider{background:var(--green-dim);}
-  .det-toggle input:checked + .det-toggle-slider::before{transform:translateX(18px);}
+  .det-skip-btn{
+    flex-shrink:0; padding:8px 18px; border-radius:5px; border:1.5px solid var(--line);
+    background:var(--bg); color:var(--ink); font-weight:700; font-size:12.5px; cursor:pointer;
+  }
+  .det-skip-btn.active{background:var(--danger); border-color:var(--danger); color:#fff;}
   .loc-cancel{
     width:100%; padding:12px; margin-top:8px; border-radius:5px; border:none; background:transparent;
     color:var(--muted); font-weight:700; cursor:pointer; font-size:13px;
@@ -666,6 +670,10 @@
         </div>
       </div>
       <div class="topbar-icons">
+        <span class="eta-text" id="etaStrip" onclick="goToScreen('orders')">
+          <span class="eta-dot"></span>
+          <span id="etaTime">40 min</span>
+        </span>
         <button class="icon-btn" aria-label="Wishlist" data-goto="wishlist">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8Z"/></svg>
           <span class="badge" id="wishBadge" style="display:none;">0</span>
@@ -681,13 +689,6 @@
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#3A3110" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
       <span style="white-space:nowrap;">Delivering to</span> <b id="addrLabel">Home &middot; Kittu Nagar</b>
       <svg class="chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#3A3110" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
-    </div>
-
-    <!-- Live delivery ETA strip: shown only when an order is out for delivery -->
-    <div class="eta-strip" id="etaStrip" onclick="goToScreen('orders')">
-      <span class="eta-dot"></span>
-      <span id="etaLabel">Order out for delivery</span>
-      <span class="eta-time" id="etaTime">-- min</span>
     </div>
 
     <div class="search-row">
@@ -1038,6 +1039,7 @@
         <span id="detUseLocBtnText">Share live location</span>
       </button>
       <div class="det-geo-status" id="detGeoStatus" style="display:none;"></div>
+      <div class="det-geo-map" id="detGeoMap" style="display:none;"></div>
 
       <input class="det-input" id="newAddrLabel" placeholder="Label (Home, Work, Other)">
 
@@ -1054,47 +1056,47 @@
       </div>
     </div>
 
-    <!-- Contact -->
-    <div class="det-block">
-      <div class="det-block-title">Contact number</div>
-      <input class="det-input" id="detPhone" type="tel" placeholder="Mobile number" inputmode="numeric" maxlength="10">
-      <input class="det-input" id="detAltPhone" type="tel" placeholder="Alternate phone number (optional)" inputmode="numeric" maxlength="10">
-    </div>
-
-    <!-- Delivery note -->
-    <div class="det-block">
-      <div class="det-block-title">Note for delivery boy</div>
-      <div class="det-note-chips" id="detNoteChips">
-        <button class="det-chip" type="button" data-note="Leave outside the door">Leave outside</button>
-        <button class="det-chip" type="button" data-note="Hand it to security/watchman">Give to watchman</button>
-        <button class="det-chip" type="button" data-note="Call before arriving">Call before arriving</button>
-        <button class="det-chip" type="button" data-note="Ring the doorbell">Ring bell</button>
+    <!-- Contact, note, timing, continue — all hidden until an address exists -->
+    <div id="detAfterAddrSection" style="display:none;">
+      <!-- Contact -->
+      <div class="det-block">
+        <div class="det-block-title">Contact number</div>
+        <input class="det-input" id="detPhone" type="tel" placeholder="Mobile number" inputmode="numeric" maxlength="10">
+        <input class="det-input" id="detAltPhone" type="tel" placeholder="Alternate phone number (optional)" inputmode="numeric" maxlength="10">
       </div>
-      <textarea class="det-input" id="detNote" placeholder="Add a note (e.g. leave outside, gate code, floor no.)" rows="2" style="margin-top:8px;"></textarea>
-    </div>
 
-    <!-- Plan delivery timing (shown only for subscription/plan orders) -->
-    <div class="det-block" id="detTimingBlock" style="display:none;">
-      <div class="det-block-title">Daily delivery time</div>
-      <div class="det-time-row" id="detTimeChips">
-        <button class="det-chip time-chip" type="button" data-time="06:00">6:00 AM</button>
-        <button class="det-chip time-chip selected" type="button" data-time="07:00">7:00 AM</button>
-        <button class="det-chip time-chip" type="button" data-time="08:00">8:00 AM</button>
-        <button class="det-chip time-chip" type="button" data-time="22:00">10:00 PM</button>
-      </div>
-      <div class="det-skip-row">
-        <div>
-          <div class="det-skip-title">Skip tomorrow's delivery</div>
-          <div class="det-skip-sub">Going out of town? Pause just tomorrow's milk.</div>
+      <!-- Delivery note -->
+      <div class="det-block">
+        <div class="det-block-title">Note for delivery boy</div>
+        <div class="det-note-chips" id="detNoteChips">
+          <button class="det-chip" type="button" data-note="Leave outside the door">Leave outside</button>
+          <button class="det-chip" type="button" data-note="Hand it to security/watchman">Give to watchman</button>
+          <button class="det-chip" type="button" data-note="Call before arriving">Call before arriving</button>
+          <button class="det-chip" type="button" data-note="Ring the doorbell">Ring bell</button>
         </div>
-        <label class="det-toggle">
-          <input type="checkbox" id="detSkipTomorrow">
-          <span class="det-toggle-slider"></span>
-        </label>
+        <textarea class="det-input" id="detNote" placeholder="Add a note (e.g. leave outside, gate code, floor no.)" rows="2" style="margin-top:8px;"></textarea>
       </div>
-    </div>
 
-    <button class="pay-cta ripple" id="detContinueBtn" style="margin-top:6px;">Save &amp; Continue to Payment</button>
+      <!-- Plan delivery timing (shown only for subscription/plan orders) -->
+      <div class="det-block" id="detTimingBlock" style="display:none;">
+        <div class="det-block-title">Daily delivery time</div>
+        <div class="det-time-row" id="detTimeChips">
+          <button class="det-chip time-chip" type="button" data-time="06:00">6:00 AM</button>
+          <button class="det-chip time-chip selected" type="button" data-time="07:00">7:00 AM</button>
+          <button class="det-chip time-chip" type="button" data-time="08:00">8:00 AM</button>
+          <button class="det-chip time-chip" type="button" data-time="22:00">10:00 PM</button>
+        </div>
+        <div class="det-skip-row">
+          <div>
+            <div class="det-skip-title">Skip tomorrow's delivery</div>
+            <div class="det-skip-sub">Going out of town? Pause just tomorrow's milk.</div>
+          </div>
+          <button class="det-skip-btn" id="detSkipTomorrowBtn" type="button" data-skip="false">Skip</button>
+        </div>
+      </div>
+
+      <button class="pay-cta ripple" id="detContinueBtn" style="margin-top:6px;">Save &amp; Continue to Payment</button>
+    </div>
   </div>
 
   <!-- WISHLIST SCREEN -->
@@ -1273,13 +1275,55 @@
   const cart = {}; // name -> {name, price, qty}
 
   // ---- Auth/session state (hoisted so nav/checkout gating can use it) ----
+  const SESSION_STORAGE_KEY = 'pd_user_session';
+
   const userSession = {
     loggedIn: false,
     googleId: null,
     email: null,
     name: null,
-    phone: null
+    phone: null,
+    blocked: false
   };
+
+  function saveSession(){
+    try{
+      localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(userSession));
+    } catch(e){ /* storage unavailable, session just won't persist across reloads */ }
+  }
+
+  function loadSession(){
+    try{
+      const raw = localStorage.getItem(SESSION_STORAGE_KEY);
+      if(!raw) return;
+      const saved = JSON.parse(raw);
+      Object.assign(userSession, saved);
+    } catch(e){ /* corrupt/missing data, start fresh */ }
+  }
+
+  function clearSession(){
+    userSession.loggedIn = false;
+    userSession.googleId = null;
+    userSession.email = null;
+    userSession.name = null;
+    userSession.phone = null;
+    userSession.blocked = false;
+    try{ localStorage.removeItem(SESSION_STORAGE_KEY); } catch(e){}
+  }
+
+  // Real integration point: call this on app load (and periodically, or on
+  // socket event "user:blocked") to check the admin panel's blocked flag —
+  // GET /api/users/:id/status -> { blocked: true/false }. If true, force
+  // the user back to the login gate even though a session was saved.
+  async function checkAccountBlocked(){
+    if(!userSession.loggedIn) return false;
+    // Placeholder — wire to real endpoint once backend exists:
+    // const res = await fetch(`/api/users/${userSession.phone}/status`);
+    // const data = await res.json();
+    // return !!data.blocked;
+    return userSession.blocked === true;
+  }
+
   let pendingAuthAction = null; // fn to run automatically once login succeeds
 
   // ---- Screen navigation ----
@@ -1884,13 +1928,11 @@
      required here, uses a simple in-page state object) so backend wiring
      later just needs to POST this object on order creation.
   ========================================================= */
-  const savedAddresses = [
-    { id:'addr1', label:'Home', full:'Flat 302, Kittu Nagar, Hyderabad', selected:true }
-  ];
+  const savedAddresses = [];
   let pendingCartHasPlan = false; // set true when a subscription/plan item is in cart
 
   const orderDetails = {
-    addressId: 'addr1',
+    addressId: null,
     phone: '',
     altPhone: '',
     note: '',
@@ -1917,9 +1959,16 @@
       card.addEventListener('click', ()=>{
         orderDetails.addressId = addr.id;
         renderSavedAddrList();
+        updateAfterAddrVisibility();
       });
       list.appendChild(card);
     });
+  }
+
+  function updateAfterAddrVisibility(){
+    const section = document.getElementById('detAfterAddrSection');
+    if(!section) return;
+    section.style.display = orderDetails.addressId ? 'block' : 'none';
   }
 
   function cartHasPlanItem(){
@@ -1928,10 +1977,17 @@
 
   function renderDetailsScreen(){
     renderSavedAddrList();
+    updateAfterAddrVisibility();
     document.getElementById('detPhone').value = orderDetails.phone;
     document.getElementById('detAltPhone').value = orderDetails.altPhone;
     document.getElementById('detNote').value = orderDetails.note;
-    document.getElementById('detSkipTomorrow').checked = orderDetails.skipTomorrow;
+
+    const skipBtn = document.getElementById('detSkipTomorrowBtn');
+    if(skipBtn){
+      skipBtn.classList.toggle('active', orderDetails.skipTomorrow);
+      skipBtn.dataset.skip = orderDetails.skipTomorrow ? 'true' : 'false';
+      skipBtn.textContent = orderDetails.skipTomorrow ? 'Skipped' : 'Skip';
+    }
 
     const timingBlock = document.getElementById('detTimingBlock');
     pendingCartHasPlan = cartHasPlanItem();
@@ -1940,14 +1996,28 @@
     document.querySelectorAll('.time-chip').forEach(chip=>{
       chip.classList.toggle('selected', chip.dataset.time === orderDetails.deliveryTime);
     });
+
+    // If there's no address yet, auto-open the "add new" form so the user
+    // isn't stuck looking at an empty list with nothing to do.
+    if(savedAddresses.length === 0){
+      document.getElementById('newAddrForm').style.display = 'block';
+    }
   }
+
+  // Skip-tomorrow button (rectangular, 5px radius — toggles on tap)
+  const detSkipTomorrowBtn = document.getElementById('detSkipTomorrowBtn');
+  if(detSkipTomorrowBtn) detSkipTomorrowBtn.addEventListener('click', ()=>{
+    orderDetails.skipTomorrow = !orderDetails.skipTomorrow;
+    detSkipTomorrowBtn.classList.toggle('active', orderDetails.skipTomorrow);
+    detSkipTomorrowBtn.textContent = orderDetails.skipTomorrow ? 'Skipped' : 'Skip';
+  });
 
   // Add new address toggle
   const addNewAddrBtn = document.getElementById('addNewAddrBtn');
   const newAddrForm = document.getElementById('newAddrForm');
   const cancelNewAddrBtn = document.getElementById('cancelNewAddrBtn');
   const saveNewAddrBtn = document.getElementById('saveNewAddrBtn');
-  let pendingAddrCoords = null; // { lat, lng, accuracy } captured from live location
+  let pendingAddrCoords = null; // { lat, lng, accuracy, radius } captured from live location
 
   function resetNewAddrForm(){
     newAddrForm.style.display = 'none';
@@ -1957,6 +2027,7 @@
     document.getElementById('newAddrRoom').value = '';
     document.getElementById('newAddrFull').value = '';
     document.getElementById('detGeoStatus').style.display = 'none';
+    document.getElementById('detGeoMap').style.display = 'none';
     pendingAddrCoords = null;
   }
 
@@ -1991,12 +2062,14 @@
       building, floor, room,
       lat: pendingAddrCoords.lat,
       lng: pendingAddrCoords.lng,
-      accuracy: pendingAddrCoords.accuracy
+      accuracy: pendingAddrCoords.accuracy,
+      radius: pendingAddrCoords.radius
     });
     orderDetails.addressId = id;
     resetNewAddrForm();
     renderSavedAddrList();
-    showToast('Address saved with live location');
+    updateAfterAddrVisibility();
+    showToast('Address saved — now add the rest of the details');
   });
 
   // "Share live location" inside the details form -> captures exact
@@ -2004,6 +2077,41 @@
   // street/area/landmark text as a starting point the user can edit.
   const detUseLocBtn = document.getElementById('detUseLocBtn');
   const detGeoStatus = document.getElementById('detGeoStatus');
+  const detGeoMap = document.getElementById('detGeoMap');
+  let detLeafletMap = null;
+  let detLeafletCircle = null;
+  const ADDRESS_RADIUS_METERS = 50;
+
+  function renderGeoMap(lat, lng){
+    detGeoMap.style.display = 'block';
+    if(!window.L){
+      // Leaflet failed to load (offline/blocked) — status text above still shows accuracy.
+      return;
+    }
+    if(!detLeafletMap){
+      detLeafletMap = L.map(detGeoMap, { zoomControl:false, attributionControl:true }).setView([lat, lng], 17);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; OpenStreetMap'
+      }).addTo(detLeafletMap);
+      detLeafletMarker = L.marker([lat, lng]).addTo(detLeafletMap);
+      detLeafletCircle = L.circle([lat, lng], {
+        radius: ADDRESS_RADIUS_METERS,
+        color: '#4CAF6D',
+        fillColor: '#4CAF6D',
+        fillOpacity: 0.15,
+        weight: 2
+      }).addTo(detLeafletMap);
+    } else {
+      detLeafletMap.setView([lat, lng], 17);
+      detLeafletMarker.setLatLng([lat, lng]);
+      detLeafletCircle.setLatLng([lat, lng]);
+    }
+    // Fit the view so the full 50m circle is visible
+    detLeafletMap.fitBounds(detLeafletCircle.getBounds(), { padding:[16,16] });
+    setTimeout(()=> detLeafletMap.invalidateSize(), 150);
+  }
+  let detLeafletMarker = null;
 
   if(detUseLocBtn) detUseLocBtn.addEventListener('click', ()=>{
     const btnText = document.getElementById('detUseLocBtnText');
@@ -2019,14 +2127,15 @@
 
     navigator.geolocation.getCurrentPosition(async (pos)=>{
       const { latitude, longitude, accuracy } = pos.coords;
-      pendingAddrCoords = { lat: latitude, lng: longitude, accuracy };
+      pendingAddrCoords = { lat: latitude, lng: longitude, accuracy, radius: ADDRESS_RADIUS_METERS };
 
       const label = await reverseGeocode(latitude, longitude);
       document.getElementById('newAddrFull').value = label.replace(/<[^>]+>/g,'').replace('Current · ', '');
       if(!document.getElementById('newAddrLabel').value) document.getElementById('newAddrLabel').value = 'Current location';
 
       detGeoStatus.style.display = 'flex';
-      detGeoStatus.innerHTML = `<span class="geo-dot"></span> Live location captured (±${Math.round(accuracy)}m) — now add building, floor &amp; room`;
+      detGeoStatus.innerHTML = `<span class="geo-dot"></span> Live location captured (±${Math.round(accuracy)}m GPS accuracy) &middot; ${ADDRESS_RADIUS_METERS}m delivery radius shown below`;
+      renderGeoMap(latitude, longitude);
 
       detUseLocBtn.classList.remove('loading');
       btnText.textContent = 'Share live location';
@@ -2038,6 +2147,7 @@
       spinner.remove();
       pendingAddrCoords = null;
       detGeoStatus.style.display = 'none';
+      detGeoMap.style.display = 'none';
       showToast(err && err.code === 1 ? 'Location permission denied — turn it on to add an address' : 'Could not fetch live location, try again');
     }, { enableHighAccuracy:true, timeout:8000, maximumAge:0 });
   });
@@ -2063,10 +2173,14 @@
   // Save & Continue -> validates, stores everything together, moves to Payment
   const detContinueBtn = document.getElementById('detContinueBtn');
   if(detContinueBtn) detContinueBtn.addEventListener('click', ()=>{
+    if(!orderDetails.addressId){
+      showToast('Please add a delivery address first');
+      return;
+    }
     const phone = document.getElementById('detPhone').value.trim();
     const altPhone = document.getElementById('detAltPhone').value.trim();
     const note = document.getElementById('detNote').value.trim();
-    const skipTomorrow = document.getElementById('detSkipTomorrow').checked;
+    // orderDetails.skipTomorrow is already kept in sync by the Skip button handler
 
     if(!/^\d{10}$/.test(phone)){
       showToast('Enter a valid 10-digit mobile number');
@@ -2081,7 +2195,6 @@
     orderDetails.phone = phone;
     orderDetails.altPhone = altPhone;
     orderDetails.note = note;
-    orderDetails.skipTomorrow = skipTomorrow;
 
     const selectedAddr = savedAddresses.find(a => a.id === orderDetails.addressId);
     if(selectedAddr) setDeliveryAddress(`${selectedAddr.label} &middot; ${selectedAddr.full}`);
@@ -2166,7 +2279,6 @@
 
   function startDeliveryEta(etaMinutes){
     const strip = document.getElementById('etaStrip');
-    const label = document.getElementById('etaLabel');
     const timeEl = document.getElementById('etaTime');
     if(!strip) return;
 
@@ -2181,16 +2293,10 @@
       strip.classList.remove('red','amber','green');
       if(minsLeft > 30){
         strip.classList.add('red');
-        label.textContent = 'Order out for delivery';
       } else if(minsLeft > 15){
         strip.classList.add('amber');
-        label.textContent = 'On the way';
-      } else if(minsLeft > 0){
-        strip.classList.add('green');
-        label.textContent = 'Almost there';
       } else {
         strip.classList.add('green');
-        label.textContent = 'Delivered at your door';
       }
       timeEl.textContent = minsLeft > 0 ? (minsLeft + ' min') : 'Arrived';
 
@@ -2244,6 +2350,7 @@
   }
   function completeLogin(){
     document.getElementById('loginGate').classList.remove('show');
+    saveSession();
     showToast('Welcome, ' + (userSession.name || 'there') + '!');
     renderAccountScreen();
     if(pendingAuthAction){
@@ -2388,18 +2495,28 @@
 
   const accountLogoutRow = document.getElementById('accountLogoutRow');
   if(accountLogoutRow) accountLogoutRow.addEventListener('click', ()=>{
-    userSession.loggedIn = false;
-    userSession.googleId = null;
-    userSession.email = null;
-    userSession.name = null;
-    userSession.phone = null;
+    clearSession();
     renderAccountScreen();
     showToast('Logged out');
     goToScreen('home');
   });
 
-  // Render initial (guest) account state on load
-  renderAccountScreen();
+  // ---- Restore saved session on load; if none/invalid, guest browses freely.
+  //      If admin has blocked the account, force back to guest + login gate. ----
+  loadSession();
+  (async function(){
+    if(userSession.loggedIn){
+      const blocked = await checkAccountBlocked();
+      if(blocked){
+        clearSession();
+        renderAccountScreen();
+        showToast('Your account has been blocked. Please contact support.');
+        openLoginGate();
+        return;
+      }
+    }
+    renderAccountScreen();
+  })();
 
   // ---- Gate: Account tab tap while logged out ----
   document.querySelectorAll('.nav-item[data-screen="account"]').forEach(item=>{
