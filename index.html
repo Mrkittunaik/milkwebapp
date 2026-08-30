@@ -1289,7 +1289,13 @@
   function saveSession(){
     try{
       localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(userSession));
-    } catch(e){ /* storage unavailable, session just won't persist across reloads */ }
+    } catch(e){
+      // Storage blocked (private/incognito mode, file:// origin, or
+      // sandboxed preview with storage disabled) — session won't persist
+      // across reloads in that case. This is a browser/environment
+      // restriction, not something JS can work around.
+      console.warn('Could not save session — storage unavailable:', e);
+    }
   }
 
   function loadSession(){
@@ -1298,7 +1304,9 @@
       if(!raw) return;
       const saved = JSON.parse(raw);
       Object.assign(userSession, saved);
-    } catch(e){ /* corrupt/missing data, start fresh */ }
+    } catch(e){
+      console.warn('Could not load saved session:', e);
+    }
   }
 
   function clearSession(){
