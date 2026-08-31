@@ -194,9 +194,12 @@
   .account-avatar{width:56px; height:56px; border-radius:5px; background:linear-gradient(150deg,var(--yellow),var(--yellow-deep)); display:flex; align-items:center; justify-content:center; font-size:22px; font-weight:800; color:#231C08;}
   .account-name{font-size:16px; font-weight:800;}
   .account-phone{font-size:12px; color:var(--muted); margin-top:2px;}
-  .settings-group{background:var(--card); border:1px solid var(--line); border-radius:var(--radius); overflow:hidden;}
-  .settings-row{padding:15px 16px; border-top:1px solid var(--line); font-size:13.5px; font-weight:600; cursor:pointer;}
-  .settings-row:first-child{border-top:none;}
+  .settings-group{background:var(--card); border:1px solid var(--line); border-radius:12px; overflow:hidden; box-shadow:0 2px 8px rgba(43,36,16,.06);}
+  .settings-row{padding:15px 16px; border-bottom:1px solid var(--line); font-size:13.5px; font-weight:600; cursor:pointer; display:flex; align-items:center; justify-content:space-between; gap:10px; transition:background .12s;}
+  .settings-row:last-child{border-bottom:none;}
+  .settings-row:active{background:var(--card-hi);}
+  .settings-row::after{content:''; flex-shrink:0; width:8px; height:8px; border-right:2px solid var(--muted); border-bottom:2px solid var(--muted); transform:rotate(-45deg); opacity:.6;}
+  #accountLogoutRow::after{display:none;}
 
   /* ---------- FLY TO CART ANIMATION ---------- */
   .fly-dot{
@@ -446,6 +449,116 @@
   .success-sub{font-size:13px; color:var(--muted); max-width:260px; margin-bottom:22px;}
   .success-cta{padding:13px 26px; border-radius:5px; border:none; background:var(--yellow); font-weight:800; cursor:pointer;}
 
+  /* =========================================================
+     SUBSCRIPTION MANAGEMENT
+  ========================================================= */
+  .sub-topbar{display:flex; align-items:center; justify-content:space-between; padding:14px 16px 6px;}
+  .sub-topbar h2{font-size:17px; margin:0;}
+  .sub-bell{position:relative; width:38px; height:38px; border-radius:50%; background:var(--card-hi); display:flex; align-items:center; justify-content:center; cursor:pointer; border:1px solid var(--line);}
+  .sub-bell svg{width:18px; height:18px;}
+  .sub-bell-dot{position:absolute; top:6px; right:7px; width:8px; height:8px; border-radius:50%; background:var(--danger); border:2px solid var(--card); display:none;}
+  .sub-bell-dot.show{display:block;}
+  .sub-bell.ring svg{animation:bellRing .5s ease;}
+  @keyframes bellRing{0%,100%{transform:rotate(0);} 20%{transform:rotate(-14deg);} 40%{transform:rotate(12deg);} 60%{transform:rotate(-8deg);} 80%{transform:rotate(5deg);}}
+
+  .sub-plan-card{margin:10px 16px 4px; padding:16px; border-radius:12px; background:linear-gradient(135deg,var(--green),var(--green-dim)); color:#fff; position:relative; overflow:hidden;}
+  .sub-plan-card::after{content:''; position:absolute; right:-30px; top:-30px; width:120px; height:120px; border-radius:50%; background:rgba(255,255,255,.08);}
+  .sub-plan-name{font-weight:800; font-size:15px; margin-bottom:2px;}
+  .sub-plan-sub{font-size:11.5px; opacity:.85; margin-bottom:12px;}
+  .sub-plan-stats{display:flex; gap:18px;}
+  .sub-plan-stat b{display:block; font-size:16px;}
+  .sub-plan-stat span{font-size:10.5px; opacity:.8;}
+
+  .sub-legend{display:flex; gap:14px; padding:14px 16px 4px; font-size:11px; color:var(--muted); flex-wrap:wrap;}
+  .sub-legend-item{display:flex; align-items:center; gap:5px;}
+  .sub-legend-dot{width:9px; height:9px; border-radius:3px;}
+
+  .sub-cal-wrap{padding:8px 16px 4px;}
+  .sub-cal-head{display:flex; align-items:center; justify-content:space-between; padding:6px 2px 10px; font-weight:800; font-size:13.5px;}
+  .sub-cal-nav{width:28px; height:28px; border-radius:50%; background:var(--card-hi); display:flex; align-items:center; justify-content:center; cursor:pointer; border:1px solid var(--line);}
+  .sub-cal-dow{display:grid; grid-template-columns:repeat(7,1fr); text-align:center; font-size:10px; color:var(--muted); font-weight:700; margin-bottom:6px;}
+  .sub-cal-grid{display:grid; grid-template-columns:repeat(7,1fr); gap:6px;}
+  .sub-day{aspect-ratio:1; border-radius:9px; display:flex; flex-direction:column; align-items:center; justify-content:center; font-size:12px; font-weight:700; cursor:pointer; position:relative; background:var(--card-hi); border:1px solid var(--line); color:var(--ink); transition:transform .12s;}
+  .sub-day:active{transform:scale(.9);}
+  .sub-day.empty{background:transparent; border:none; cursor:default;}
+  .sub-day.past-delivered{background:var(--green-light); border-color:#CFEBD8; color:var(--green-dim);}
+  .sub-day.past-skipped{background:#FBE4E0; border-color:#F5CFC8; color:var(--danger);}
+  .sub-day.today{outline:2px solid var(--yellow-deep); outline-offset:1px;}
+  .sub-day.upcoming-normal{background:var(--card); }
+  .sub-day.upcoming-skip{background:#FBE4E0; border-color:#F5CFC8; color:var(--danger);}
+  .sub-day .sub-day-dot{width:5px; height:5px; border-radius:50%; margin-top:2px;}
+  .sub-day.past-delivered .sub-day-dot{background:var(--green-dim);}
+  .sub-day.past-skipped .sub-day-dot{background:var(--danger);}
+  .sub-day.locked{opacity:.55;}
+  .sub-day.just-updated{animation:dayPulse .5s ease;}
+  @keyframes dayPulse{0%{transform:scale(1);} 40%{transform:scale(1.22);} 100%{transform:scale(1);}}
+
+  .sub-cutoff-note{display:flex; align-items:center; gap:8px; margin:14px 16px 0; padding:10px 12px; border-radius:8px; background:var(--card-hi); font-size:11.5px; color:var(--muted); border:1px solid var(--line);}
+
+  /* Day adjust bottom sheet */
+  .sheet-backdrop{position:absolute; inset:0; background:rgba(43,36,16,.45); z-index:70; display:none; align-items:flex-end; justify-content:center;}
+  .sheet-backdrop.show{display:flex; animation:fadeIn .2s ease;}
+  .adjust-sheet{background:var(--card); width:100%; max-width:480px; border-radius:16px 16px 0 0; padding:20px 18px 24px; animation:slideUp .28s cubic-bezier(.22,.9,.3,1);}
+  .adjust-sheet-handle{width:36px; height:4px; border-radius:2px; background:var(--line); margin:0 auto 14px;}
+  .adjust-sheet h3{margin:0 0 3px; font-size:15.5px;}
+  .adjust-sheet p{margin:0 0 16px; font-size:12px; color:var(--muted);}
+  .adjust-toggle{display:flex; background:var(--card-hi); border-radius:10px; padding:4px; margin-bottom:16px;}
+  .adjust-toggle-btn{flex:1; text-align:center; padding:10px 4px; border-radius:8px; font-size:12.5px; font-weight:700; cursor:pointer; color:var(--muted);}
+  .adjust-toggle-btn.active{background:var(--card); color:var(--ink); box-shadow:0 2px 6px rgba(0,0,0,.06);}
+  .adjust-days-label{font-size:12px; font-weight:700; color:var(--muted); margin-bottom:8px;}
+  .adjust-days-row{display:flex; gap:8px; margin-bottom:18px;}
+  .adjust-day-chip{flex:1; text-align:center; padding:10px 4px; border-radius:9px; border:1.5px solid var(--line); font-size:12.5px; font-weight:700; cursor:pointer; background:var(--card);}
+  .adjust-day-chip.selected{border-color:var(--danger); background:#FBE4E0; color:var(--danger);}
+  .adjust-day-chip[disabled]{opacity:.4; pointer-events:none;}
+
+  .swipe-track{position:relative; height:52px; border-radius:26px; background:var(--card-hi); border:1.5px solid var(--line); overflow:hidden; user-select:none;}
+  .swipe-track-label{position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:12.5px; font-weight:800; color:var(--muted); letter-spacing:.3px; pointer-events:none;}
+  .swipe-fill{position:absolute; left:0; top:0; bottom:0; width:0; background:linear-gradient(90deg,#FBE4E0,#F5CFC8); border-radius:26px; pointer-events:none; transition:width .05s linear;}
+  .swipe-thumb{position:absolute; top:3px; left:3px; width:46px; height:46px; border-radius:50%; background:var(--danger); display:flex; align-items:center; justify-content:center; cursor:grab; box-shadow:0 3px 10px rgba(224,80,60,.4); touch-action:none;}
+  .swipe-thumb svg{width:20px; height:20px; stroke:#fff;}
+  .swipe-thumb.snapping{transition:left .25s cubic-bezier(.22,.9,.3,1);}
+  .swipe-track.locked .swipe-thumb{background:var(--muted); cursor:not-allowed; box-shadow:none;}
+  .swipe-track.locked .swipe-track-label{opacity:.6;}
+  .swipe-cutoff-msg{margin-top:10px; font-size:11.5px; color:var(--danger); text-align:center; display:none;}
+  .swipe-cutoff-msg.show{display:block;}
+  .adjust-cancel{width:100%; text-align:center; margin-top:14px; font-size:12.5px; font-weight:700; color:var(--muted); cursor:pointer; padding:6px;}
+
+  /* Confirmation tick overlay (reuses success-overlay pattern but scoped) */
+  .adjust-confirm-overlay{position:absolute; inset:0; background:rgba(255,253,246,.97); z-index:80; display:none; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:30px;}
+  .adjust-confirm-overlay.show{display:flex; animation:fadeIn .25s ease;}
+
+  /* Notifications panel */
+  .notif-backdrop{position:fixed; inset:0; background:rgba(43,36,16,.4); z-index:200; display:none; align-items:stretch; justify-content:flex-end;}
+  .notif-backdrop.show{display:flex; animation:fadeIn .2s ease;}
+  .notif-panel{background:var(--card); width:86%; max-width:360px; height:100%; margin-top:0; border-radius:0; padding:0; max-height:none; overflow-y:auto; animation:notifSlideIn .28s cubic-bezier(.22,.9,.3,1); box-shadow:-8px 0 24px rgba(0,0,0,.18); display:flex; flex-direction:column;}
+  @keyframes notifSlideIn{from{transform:translateX(100%);} to{transform:translateX(0);}}
+  .notif-panel-header{display:flex; align-items:center; justify-content:space-between; padding:16px 16px 14px; border-bottom:1px solid var(--line); flex-shrink:0; position:sticky; top:0; background:var(--card); z-index:1;}
+  .notif-panel-header h4{margin:0; font-size:15.5px;}
+  .notif-panel-close{width:32px; height:32px; border-radius:50%; background:var(--card-hi); display:flex; align-items:center; justify-content:center; cursor:pointer; border:1px solid var(--line); flex-shrink:0;}
+  .notif-panel-close svg{width:15px; height:15px;}
+  .notif-panel-body{padding:10px 6px 20px; flex:1;}
+  .notif-item{display:flex; gap:10px; padding:10px 12px; border-radius:10px; margin:0 6px 4px;}
+  .notif-item:active{background:var(--card-hi);}
+  .notif-icon{width:34px; height:34px; border-radius:50%; background:var(--card-hi); display:flex; align-items:center; justify-content:center; flex-shrink:0;}
+  .notif-icon svg{width:16px; height:16px;}
+  .notif-text{font-size:12px;}
+  .notif-title{font-weight:700; margin-bottom:2px;}
+  .notif-time{color:var(--muted); font-size:10.5px; margin-top:2px;}
+  .notif-empty{text-align:center; padding:30px 10px; color:var(--muted); font-size:12.5px;}
+
+  /* Renewal reminder popup */
+  .renew-backdrop{position:absolute; inset:0; background:rgba(43,36,16,.5); z-index:90; display:none; align-items:center; justify-content:center; padding:20px;}
+  .renew-backdrop.show{display:flex; animation:fadeIn .25s ease;}
+  .renew-card{background:var(--card); width:100%; max-width:340px; border-radius:16px; padding:24px 20px; text-align:center; animation:checkPop .4s cubic-bezier(.34,1.56,.64,1);}
+  .renew-icon{width:64px; height:64px; border-radius:50%; background:#FFF3D6; display:flex; align-items:center; justify-content:center; margin:0 auto 14px;}
+  .renew-icon svg{width:30px; height:30px; stroke:var(--yellow-deep);}
+  .renew-card h3{margin:0 0 6px; font-size:16px;}
+  .renew-card p{margin:0 0 20px; font-size:12.5px; color:var(--muted);}
+  .renew-btns{display:flex; gap:10px;}
+  .renew-btn{flex:1; padding:12px 6px; border-radius:9px; border:none; font-weight:800; font-size:12.5px; cursor:pointer;}
+  .renew-btn.primary{background:var(--yellow); color:var(--ink);}
+  .renew-btn.ghost{background:var(--card-hi); color:var(--muted); border:1px solid var(--line);}
+
   /* Location modal */
   .loc-modal-backdrop{
     position:absolute; inset:0; background:rgba(43,36,16,.45); z-index:60; display:none;
@@ -674,6 +787,10 @@
           <span class="eta-dot"></span>
           <span id="etaTime">40 min</span>
         </span>
+        <button class="icon-btn" aria-label="Notifications" id="topNotifBtn">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+          <span class="badge" id="topNotifBadge" style="display:none;">0</span>
+        </button>
         <button class="icon-btn" aria-label="Wishlist" data-goto="wishlist">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8Z"/></svg>
           <span class="badge" id="wishBadge" style="display:none;">0</span>
@@ -694,6 +811,22 @@
     <div class="search-row">
       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
       <input type="text" placeholder="Search milk, paneer, ghee...">
+    </div>
+  </div>
+
+  <!-- Notifications panel (global) -->
+  <div class="notif-backdrop" id="notifBackdrop">
+    <div class="notif-panel">
+      <div class="notif-panel-header">
+        <h4>Notifications</h4>
+        <div class="notif-panel-close" id="notifCloseBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </div>
+      </div>
+      <div class="notif-panel-body">
+        <div id="notifList"></div>
+        <div class="notif-empty" id="notifEmpty" style="display:none;">No notifications yet</div>
+      </div>
     </div>
   </div>
 
@@ -1208,11 +1341,116 @@
     </div>
     <div class="settings-group" id="accountSettingsGroup">
       <div class="settings-row"><div class="settings-row-label">Home &middot; Kittu Nagar</div><div class="settings-row-sub">Delivery address</div></div>
-      <div class="settings-row"><div class="settings-row-label">Manage Subscriptions</div></div>
+      <div class="settings-row" id="manageSubRow" data-goto="subscription"><div class="settings-row-label">Manage Subscriptions</div></div>
       <div class="settings-row"><div class="settings-row-label">Payment Methods</div></div>
       <div class="settings-row"><div class="settings-row-label">Order History</div></div>
       <div class="settings-row"><div class="settings-row-label">Help &amp; Support</div></div>
       <div class="settings-row" id="accountLogoutRow"><div class="settings-row-label" style="color:var(--danger);">Log Out</div></div>
+    </div>
+  </div>
+
+  <!-- SUBSCRIPTION MANAGEMENT SCREEN -->
+  <div class="screen" id="screen-subscription" style="position:relative;">
+    <div class="screen-header-row" style="margin-top:2px;">
+      <div class="back-btn" data-goto="account">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+      </div>
+      <div class="section-title" style="margin:0;">Manage <span>Subscription</span></div>
+    </div>
+
+    <div class="sub-topbar">
+      <div style="font-size:12px; color:var(--muted);">Your active daily milk plan</div>
+    </div>
+
+    <div class="sub-plan-card" id="subPlanCard">
+      <div class="sub-plan-name" id="subPlanName">Family Pack &middot; Monthly</div>
+      <div class="sub-plan-sub" id="subPlanSub">1 Litre every morning &middot; renews on <span id="subRenewDate">30 Sep</span></div>
+      <div class="sub-plan-stats">
+        <div class="sub-plan-stat"><b id="subDaysLeft">—</b><span>Days left</span></div>
+        <div class="sub-plan-stat"><b id="subDelivered">—</b><span>Delivered</span></div>
+        <div class="sub-plan-stat"><b id="subSkipped">—</b><span>Skipped</span></div>
+      </div>
+    </div>
+
+    <div class="sub-legend">
+      <div class="sub-legend-item"><div class="sub-legend-dot" style="background:var(--green-dim);"></div>Delivered</div>
+      <div class="sub-legend-item"><div class="sub-legend-dot" style="background:var(--danger);"></div>Skipped</div>
+      <div class="sub-legend-item"><div class="sub-legend-dot" style="background:var(--yellow-deep);"></div>Today</div>
+      <div class="sub-legend-item"><div class="sub-legend-dot" style="background:var(--card-hi); border:1px solid var(--line);"></div>Upcoming</div>
+    </div>
+
+    <div class="sub-cal-wrap">
+      <div class="sub-cal-head">
+        <div class="sub-cal-nav" id="subCalPrev">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+        </div>
+        <div id="subCalMonthLabel">September 2026</div>
+        <div class="sub-cal-nav" id="subCalNext">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+        </div>
+      </div>
+      <div class="sub-cal-dow"><div>S</div><div>M</div><div>T</div><div>W</div><div>T</div><div>F</div><div>S</div></div>
+      <div class="sub-cal-grid" id="subCalGrid"></div>
+    </div>
+
+    <div class="sub-cutoff-note" id="subCutoffNote">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--yellow-deep)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+      <span>Skip requests for tomorrow must be made before <b>10:00 PM tonight</b>. After that, tomorrow's delivery is locked.</span>
+    </div>
+
+    <!-- Day adjust bottom sheet -->
+    <div class="sheet-backdrop" id="adjustSheetBackdrop">
+      <div class="adjust-sheet">
+        <div class="adjust-sheet-handle"></div>
+        <h3 id="adjustSheetTitle">Adjust Tomorrow's Delivery</h3>
+        <p id="adjustSheetSub">1 Litre Toned Milk &middot; scheduled for 7:00 AM</p>
+
+        <div class="adjust-toggle">
+          <div class="adjust-toggle-btn active" data-mode="deliver" id="adjustModeDeliver">Deliver as usual</div>
+          <div class="adjust-toggle-btn" data-mode="skip" id="adjustModeSkip">Skip delivery</div>
+        </div>
+
+        <div id="adjustSkipDaysBlock" style="display:none;">
+          <div class="adjust-days-label">Skip how many days?</div>
+          <div class="adjust-days-row" id="adjustDaysRow">
+            <div class="adjust-day-chip selected" data-days="1">1 Day</div>
+            <div class="adjust-day-chip" data-days="2">2 Days</div>
+            <div class="adjust-day-chip" data-days="3">3 Days</div>
+          </div>
+        </div>
+
+        <div class="swipe-track" id="swipeTrack">
+          <div class="swipe-fill" id="swipeFill"></div>
+          <div class="swipe-track-label" id="swipeLabel">Swipe to confirm</div>
+          <div class="swipe-thumb" id="swipeThumb">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+          </div>
+        </div>
+        <div class="swipe-cutoff-msg" id="swipeCutoffMsg">It's past 10 PM — tomorrow's delivery is already locked in. You can still adjust from the day after.</div>
+
+        <div class="adjust-cancel" id="adjustCancelBtn">Cancel</div>
+      </div>
+    </div>
+
+    <!-- Confirmation tick overlay -->
+    <div class="adjust-confirm-overlay" id="adjustConfirmOverlay">
+      <div class="success-check"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--green-dim)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
+      <div class="success-title" id="adjustConfirmTitle">Delivery Skipped</div>
+      <div class="success-sub" id="adjustConfirmSub">We won't deliver tomorrow. You can undo this from Notifications any time before 10 PM.</div>
+      <button class="success-cta" id="adjustConfirmDone">Done</button>
+    </div>
+
+    <!-- Renewal reminder popup -->
+    <div class="renew-backdrop" id="renewBackdrop">
+      <div class="renew-card">
+        <div class="renew-icon"><svg viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg></div>
+        <h3>Your plan renews in 3 days</h3>
+        <p>Family Pack &middot; Monthly will auto-renew on <b id="renewDateInPopup">30 Sep</b>. Want to keep it going?</p>
+        <div class="renew-btns">
+          <div class="renew-btn ghost" id="renewLaterBtn">Remind later</div>
+          <div class="renew-btn primary" id="renewConfirmBtn">Renew Plan</div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -2576,6 +2814,438 @@
 
   window.startForegroundLocationTracking = startForegroundLocationTracking;
   window.stopForegroundLocationTracking = stopForegroundLocationTracking;
+
+  /* =========================================================
+     GLOBAL NOTIFICATIONS (shared by topbar bell + subscription bell)
+  ========================================================= */
+  const notifications = []; // {title, sub, kind, time}
+
+  function pushNotification(n){
+    notifications.unshift({
+      title: n.title,
+      sub: n.sub,
+      kind: n.kind,
+      time: n.time instanceof Date ? n.time : new Date()
+    });
+    renderNotifBadge();
+  }
+
+  function renderNotifBadge(){
+    const count = notifications.length;
+    const dot = document.getElementById('subBellDot');
+    if(dot) dot.classList.toggle('show', count > 0);
+    const topBadge = document.getElementById('topNotifBadge');
+    if(topBadge){
+      if(count > 0){
+        topBadge.textContent = count > 9 ? '9+' : String(count);
+        topBadge.style.display = 'flex';
+      } else {
+        topBadge.style.display = 'none';
+      }
+    }
+  }
+
+  function timeAgo(d){
+    const mins = Math.round((Date.now() - d.getTime())/60000);
+    if(mins < 1) return 'just now';
+    if(mins < 60) return mins + 'm ago';
+    const hrs = Math.round(mins/60);
+    if(hrs < 24) return hrs + 'h ago';
+    const days = Math.round(hrs/24);
+    if(days < 7) return days + 'd ago';
+    return d.toLocaleDateString('en-IN',{day:'numeric',month:'short'});
+  }
+
+  function iconFor(kind){
+    if(kind === 'skip') return '<svg viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6M9 9l6 6"/></svg>';
+    if(kind === 'deliver') return '<svg viewBox="0 0 24 24" fill="none" stroke="var(--green-dim)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
+    if(kind === 'order') return '<svg viewBox="0 0 24 24" fill="none" stroke="var(--yellow-deep)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.7 13.4a2 2 0 0 0 2 1.6h9.7a2 2 0 0 0 2-1.6L23 6H6"/></svg>';
+    if(kind === 'promo') return '<svg viewBox="0 0 24 24" fill="none" stroke="var(--yellow-deep)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41 11 3.83A2 2 0 0 0 9.59 3.2L4 3a1 1 0 0 0-1 1l.2 5.59a2 2 0 0 0 .58 1.4l9.6 9.6a2 2 0 0 0 2.82 0l4.4-4.4a2 2 0 0 0 0-2.82Z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg>';
+    return '<svg viewBox="0 0 24 24" fill="none" stroke="var(--yellow-deep)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>';
+  }
+
+  function renderNotifList(){
+    const list = document.getElementById('notifList');
+    const empty = document.getElementById('notifEmpty');
+    list.innerHTML = '';
+    if(notifications.length === 0){
+      empty.style.display = 'block';
+      return;
+    }
+    empty.style.display = 'none';
+    notifications.forEach(n=>{
+      const row = document.createElement('div');
+      row.className = 'notif-item';
+      row.innerHTML = `
+        <div class="notif-icon">${iconFor(n.kind)}</div>
+        <div class="notif-text">
+          <div class="notif-title">${n.title}</div>
+          <div>${n.sub}</div>
+          <div class="notif-time">${timeAgo(n.time)}</div>
+        </div>`;
+      list.appendChild(row);
+    });
+  }
+
+  function openNotifPanel(){
+    renderNotifList();
+    document.getElementById('notifBackdrop').classList.add('show');
+  }
+  function ringBell(el){
+    if(!el) return;
+    el.classList.remove('ring');
+    void el.offsetWidth;
+    el.classList.add('ring');
+  }
+
+  document.getElementById('topNotifBtn').addEventListener('click', function(){
+    ringBell(this);
+    openNotifPanel();
+  });
+  document.getElementById('notifBackdrop').addEventListener('click', (e)=>{
+    if(e.target.id === 'notifBackdrop') document.getElementById('notifBackdrop').classList.remove('show');
+  });
+  document.getElementById('notifCloseBtn').addEventListener('click', ()=>{
+    document.getElementById('notifBackdrop').classList.remove('show');
+  });
+
+  // Seed with realistic starter notifications so the bell isn't empty on first load
+  (function seedNotifications(){
+    const now = Date.now();
+    pushNotification({ title:'Order delivered', sub:'Your 1L Toned Milk was delivered at 6:52 AM', kind:'deliver', time:new Date(now - 45*60000) });
+    pushNotification({ title:'Delivery boy on the way', sub:'Ravi is 10 minutes away with your order', kind:'order', time:new Date(now - 3*3600000) });
+    pushNotification({ title:'Flat ₹50 off', sub:'Subscribe to any monthly plan and save ₹50 this week', kind:'promo', time:new Date(now - 20*3600000) });
+    pushNotification({ title:'Payment received', sub:'₹899 received for Family Pack subscription', kind:'deliver', time:new Date(now - 26*3600000) });
+    pushNotification({ title:'Plan renews in 3 days', sub:'Your Family Pack · Monthly renews soon — manage it anytime', kind:'renew', time:new Date(now - 30*3600000) });
+    notifications.sort((a,b)=> b.time - a.time);
+    renderNotifBadge();
+  })();
+
+  /* =========================================================
+     SUBSCRIPTION MANAGEMENT (in-memory mock — no backend yet)
+  ========================================================= */
+  (function(){
+    const CUTOFF_HOUR = 22; // 10 PM
+
+    // ---- Mock plan state ----
+    const planStart = new Date(); planStart.setDate(planStart.getDate() - 6); planStart.setHours(0,0,0,0);
+    const planEnd = new Date(planStart); planEnd.setDate(planEnd.getDate() + 29);
+
+    // day status: 'delivered' | 'skipped' | 'normal' (future, default)
+    // key = 'YYYY-MM-DD'
+    const dayStatus = {};
+
+    function dkey(d){ return d.toISOString().slice(0,10); }
+    function sameDay(a,b){ return dkey(a) === dkey(b); }
+    function addDays(d,n){ const r = new Date(d); r.setDate(r.getDate()+n); return r; }
+    function todayMid(){ const t = new Date(); t.setHours(0,0,0,0); return t; }
+
+    // seed some history so the calendar isn't empty
+    (function seed(){
+      let d = new Date(planStart);
+      const today = todayMid();
+      while(d < today){
+        dayStatus[dkey(d)] = (dkey(d) === dkey(addDays(today,-3))) ? 'skipped' : 'delivered';
+        d = addDays(d,1);
+      }
+    })();
+
+    function pastCutoff(){
+      return new Date().getHours() >= CUTOFF_HOUR;
+    }
+
+    // The earliest date a user is allowed to change (respecting the 10PM cutoff)
+    function earliestEditableDate(){
+      const t = todayMid();
+      return pastCutoff() ? addDays(t,2) : addDays(t,1);
+    }
+
+    let calViewMonth = new Date(todayMid().getFullYear(), todayMid().getMonth(), 1);
+
+    function statOf(d){
+      const key = dkey(d);
+      const today = todayMid();
+      if(d < today) return dayStatus[key] || 'delivered';
+      if(sameDay(d, today)) return 'today';
+      return dayStatus[key] || 'normal';
+    }
+
+    function renderCalendar(){
+      const grid = document.getElementById('subCalGrid');
+      const label = document.getElementById('subCalMonthLabel');
+      label.textContent = calViewMonth.toLocaleDateString('en-IN', { month:'long', year:'numeric' });
+      grid.innerHTML = '';
+      const firstOfMonth = new Date(calViewMonth);
+      const startPad = firstOfMonth.getDay();
+      const daysInMonth = new Date(calViewMonth.getFullYear(), calViewMonth.getMonth()+1, 0).getDate();
+
+      for(let i=0;i<startPad;i++){
+        const pad = document.createElement('div');
+        pad.className = 'sub-day empty';
+        grid.appendChild(pad);
+      }
+      for(let dnum=1; dnum<=daysInMonth; dnum++){
+        const d = new Date(calViewMonth.getFullYear(), calViewMonth.getMonth(), dnum);
+        const cell = document.createElement('div');
+        cell.className = 'sub-day';
+        cell.dataset.date = dkey(d);
+
+        const inPlan = d >= planStart && d <= planEnd;
+        const status = inPlan ? statOf(d) : null;
+
+        if(!inPlan){
+          cell.classList.add('locked');
+          cell.innerHTML = `<span>${dnum}</span>`;
+        } else if(status === 'today'){
+          cell.classList.add('today','upcoming-normal');
+          cell.innerHTML = `<span>${dnum}</span><div class="sub-day-dot" style="background:var(--yellow-deep);"></div>`;
+        } else if(status === 'delivered'){
+          cell.classList.add('past-delivered');
+          cell.innerHTML = `<span>${dnum}</span><div class="sub-day-dot"></div>`;
+        } else if(status === 'skipped'){
+          cell.classList.add(d < todayMid() ? 'past-skipped' : 'upcoming-skip');
+          cell.innerHTML = `<span>${dnum}</span><div class="sub-day-dot"></div>`;
+        } else {
+          cell.classList.add('upcoming-normal');
+          cell.innerHTML = `<span>${dnum}</span>`;
+        }
+
+        if(inPlan && d > todayMid()){
+          cell.addEventListener('click', ()=> openAdjustSheet(d));
+        } else if(!inPlan){
+          // no click
+        } else {
+          cell.style.cursor = 'default';
+        }
+        grid.appendChild(cell);
+      }
+      renderPlanStats();
+    }
+
+    function renderPlanStats(){
+      const today = todayMid();
+      const daysLeft = Math.max(0, Math.round((planEnd - today) / 86400000));
+      let delivered = 0, skipped = 0;
+      let d = new Date(planStart);
+      while(d <= planEnd){
+        const s = statOf(d);
+        if(s === 'delivered') delivered++;
+        if(s === 'skipped' && d < today) skipped++;
+        d = addDays(d,1);
+      }
+      document.getElementById('subDaysLeft').textContent = daysLeft;
+      document.getElementById('subDelivered').textContent = delivered;
+      document.getElementById('subSkipped').textContent = skipped;
+      document.getElementById('subRenewDate').textContent = planEnd.toLocaleDateString('en-IN',{day:'numeric',month:'short'});
+      document.getElementById('renewDateInPopup').textContent = planEnd.toLocaleDateString('en-IN',{day:'numeric',month:'short'});
+    }
+
+    document.getElementById('subCalPrev').addEventListener('click', ()=>{
+      calViewMonth = new Date(calViewMonth.getFullYear(), calViewMonth.getMonth()-1, 1);
+      renderCalendar();
+    });
+    document.getElementById('subCalNext').addEventListener('click', ()=>{
+      calViewMonth = new Date(calViewMonth.getFullYear(), calViewMonth.getMonth()+1, 1);
+      renderCalendar();
+    });
+
+    /* ---------- Adjust bottom sheet ---------- */
+    let adjustTargetDate = null;
+    let adjustMode = 'deliver';
+    let adjustSkipDays = 1;
+
+    function openAdjustSheet(d){
+      adjustTargetDate = d;
+      adjustMode = 'deliver';
+      adjustSkipDays = 1;
+      document.getElementById('adjustModeDeliver').classList.add('active');
+      document.getElementById('adjustModeSkip').classList.remove('active');
+      document.getElementById('adjustSkipDaysBlock').style.display = 'none';
+      document.querySelectorAll('.adjust-day-chip').forEach(c=>c.classList.remove('selected'));
+      document.querySelector('.adjust-day-chip[data-days="1"]').classList.add('selected');
+
+      const isTomorrow = sameDay(d, addDays(todayMid(),1));
+      const label = isTomorrow ? "Tomorrow" : d.toLocaleDateString('en-IN',{weekday:'long', day:'numeric', month:'short'});
+      document.getElementById('adjustSheetTitle').textContent = `Adjust ${label}'s Delivery`;
+      document.getElementById('adjustSheetSub').textContent = `1 Litre Toned Milk · scheduled for 7:00 AM`;
+
+      const locked = isTomorrow && pastCutoff();
+      const swipeTrack = document.getElementById('swipeTrack');
+      swipeTrack.classList.toggle('locked', locked);
+      document.getElementById('swipeCutoffMsg').classList.toggle('show', locked);
+      document.getElementById('swipeLabel').textContent = locked ? 'Locked for tonight' : 'Swipe to confirm';
+      resetSwipe();
+
+      document.getElementById('adjustSheetBackdrop').classList.add('show');
+    }
+
+    function closeAdjustSheet(){
+      document.getElementById('adjustSheetBackdrop').classList.remove('show');
+    }
+    document.getElementById('adjustCancelBtn').addEventListener('click', closeAdjustSheet);
+    document.getElementById('adjustSheetBackdrop').addEventListener('click', (e)=>{
+      if(e.target.id === 'adjustSheetBackdrop') closeAdjustSheet();
+    });
+
+    document.getElementById('adjustModeDeliver').addEventListener('click', function(){
+      adjustMode = 'deliver';
+      this.classList.add('active');
+      document.getElementById('adjustModeSkip').classList.remove('active');
+      document.getElementById('adjustSkipDaysBlock').style.display = 'none';
+      document.getElementById('swipeLabel').textContent = document.getElementById('swipeTrack').classList.contains('locked') ? 'Locked for tonight' : 'Swipe to confirm';
+    });
+    document.getElementById('adjustModeSkip').addEventListener('click', function(){
+      adjustMode = 'skip';
+      this.classList.add('active');
+      document.getElementById('adjustModeDeliver').classList.remove('active');
+      document.getElementById('adjustSkipDaysBlock').style.display = 'block';
+      document.getElementById('swipeLabel').textContent = document.getElementById('swipeTrack').classList.contains('locked') ? 'Locked for tonight' : 'Swipe to skip';
+    });
+
+    document.querySelectorAll('.adjust-day-chip').forEach(chip=>{
+      chip.addEventListener('click', function(){
+        document.querySelectorAll('.adjust-day-chip').forEach(c=>c.classList.remove('selected'));
+        this.classList.add('selected');
+        adjustSkipDays = parseInt(this.dataset.days, 10);
+      });
+    });
+
+    /* ---------- Swipe-to-confirm slider ---------- */
+    const swipeTrack = document.getElementById('swipeTrack');
+    const swipeThumb = document.getElementById('swipeThumb');
+    const swipeFill = document.getElementById('swipeFill');
+    let swipeMax = 0, swipeStartX = 0, thumbStartLeft = 0, dragging = false;
+
+    function resetSwipe(){
+      swipeThumb.classList.add('snapping');
+      swipeThumb.style.left = '3px';
+      swipeFill.style.width = '0px';
+      requestAnimationFrame(()=> swipeThumb.classList.remove('snapping'));
+    }
+
+    function computeSwipeMax(){
+      swipeMax = swipeTrack.offsetWidth - swipeThumb.offsetWidth - 6;
+    }
+
+    function onDragStart(e){
+      if(swipeTrack.classList.contains('locked')) return;
+      dragging = true;
+      computeSwipeMax();
+      swipeStartX = (e.touches ? e.touches[0].clientX : e.clientX);
+      thumbStartLeft = swipeThumb.offsetLeft;
+      swipeThumb.classList.remove('snapping');
+      swipeThumb.style.cursor = 'grabbing';
+    }
+    function onDragMove(e){
+      if(!dragging) return;
+      const x = (e.touches ? e.touches[0].clientX : e.clientX);
+      let newLeft = thumbStartLeft + (x - swipeStartX);
+      newLeft = Math.max(3, Math.min(swipeMax, newLeft));
+      swipeThumb.style.left = newLeft + 'px';
+      swipeFill.style.width = (newLeft + swipeThumb.offsetWidth) + 'px';
+      if(newLeft >= swipeMax - 2){
+        dragging = false;
+        completeSwipe();
+      }
+    }
+    function onDragEnd(){
+      if(!dragging) return;
+      dragging = false;
+      swipeThumb.style.cursor = 'grab';
+      const left = swipeThumb.offsetLeft;
+      if(left < swipeMax - 2){
+        resetSwipe();
+      }
+    }
+
+    swipeThumb.addEventListener('mousedown', onDragStart);
+    swipeThumb.addEventListener('touchstart', onDragStart, {passive:true});
+    window.addEventListener('mousemove', onDragMove);
+    window.addEventListener('touchmove', onDragMove, {passive:true});
+    window.addEventListener('mouseup', onDragEnd);
+    window.addEventListener('touchend', onDragEnd);
+
+    function completeSwipe(){
+      if(swipeTrack.classList.contains('locked')) return;
+      applyAdjustment();
+    }
+
+    function applyAdjustment(){
+      const target = adjustTargetDate;
+      const overlay = document.getElementById('adjustConfirmOverlay');
+      const titleEl = document.getElementById('adjustConfirmTitle');
+      const subEl = document.getElementById('adjustConfirmSub');
+
+      if(adjustMode === 'skip'){
+        for(let i=0; i<adjustSkipDays; i++){
+          const d = addDays(target, i);
+          if(d > planEnd) break;
+          dayStatus[dkey(d)] = 'skipped';
+          const cell = document.querySelector(`.sub-day[data-date="${dkey(d)}"]`);
+          if(cell) cell.classList.add('just-updated');
+        }
+        const endDate = addDays(target, adjustSkipDays-1);
+        const rangeLabel = adjustSkipDays === 1
+          ? target.toLocaleDateString('en-IN',{weekday:'long', day:'numeric', month:'short'})
+          : `${target.toLocaleDateString('en-IN',{day:'numeric', month:'short'})} – ${endDate.toLocaleDateString('en-IN',{day:'numeric', month:'short'})}`;
+        titleEl.textContent = adjustSkipDays === 1 ? 'Delivery Skipped' : `${adjustSkipDays} Deliveries Skipped`;
+        subEl.textContent = `No milk will be delivered on ${rangeLabel}. You can undo this anytime before 10 PM the night before.`;
+        pushNotification({
+          title: adjustSkipDays === 1 ? 'Delivery skipped' : `${adjustSkipDays} days skipped`,
+          sub: `Skipped: ${rangeLabel}`,
+          kind: 'skip'
+        });
+      } else {
+        dayStatus[dkey(target)] = 'normal';
+        const cell = document.querySelector(`.sub-day[data-date="${dkey(target)}"]`);
+        if(cell) cell.classList.add('just-updated');
+        titleEl.textContent = 'Delivery Confirmed';
+        subEl.textContent = `Your ${target.toLocaleDateString('en-IN',{weekday:'long', day:'numeric', month:'short'})} delivery is back on as usual.`;
+        pushNotification({
+          title: 'Delivery confirmed',
+          sub: `Back to normal for ${target.toLocaleDateString('en-IN',{day:'numeric', month:'short'})}`,
+          kind: 'deliver'
+        });
+      }
+
+      closeAdjustSheet();
+      overlay.classList.add('show');
+      renderCalendar();
+    }
+
+    document.getElementById('adjustConfirmDone').addEventListener('click', ()=>{
+      document.getElementById('adjustConfirmOverlay').classList.remove('show');
+    });
+
+    /* ---------- Renewal reminder popup ---------- */
+    function maybeShowRenewalReminder(){
+      const daysToRenew = Math.round((planEnd - todayMid()) / 86400000);
+      if(daysToRenew <= 3 && daysToRenew >= 0){
+        document.getElementById('renewBackdrop').classList.add('show');
+      }
+    }
+    document.getElementById('renewLaterBtn').addEventListener('click', ()=>{
+      document.getElementById('renewBackdrop').classList.remove('show');
+      pushNotification({ title:'Renewal reminder snoozed', sub:'We\'ll remind you again tomorrow', kind:'renew' });
+    });
+    document.getElementById('renewConfirmBtn').addEventListener('click', ()=>{
+      document.getElementById('renewBackdrop').classList.remove('show');
+      planEnd.setDate(planEnd.getDate() + 30);
+      renderPlanStats();
+      showToast('Plan renewed for another 30 days');
+      pushNotification({ title:'Plan renewed', sub:'Your Family Pack subscription now runs 30 more days', kind:'deliver' });
+    });
+
+    /* ---------- Init on screen entry ---------- */
+    let subInitDone = false;
+    document.getElementById('manageSubRow').addEventListener('click', function(){
+      renderCalendar();
+      if(!subInitDone){
+        subInitDone = true;
+        setTimeout(maybeShowRenewalReminder, 500);
+      }
+    });
+  })();
 </script>
 </body>
 </html>
