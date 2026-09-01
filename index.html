@@ -487,6 +487,7 @@
   .sub-day.upcoming-normal{background:var(--card); }
   .sub-day.upcoming-skip{background:#FBE4E0; border-color:#F5CFC8; color:var(--danger);}
   .sub-day .sub-day-dot{width:5px; height:5px; border-radius:50%; margin-top:2px;}
+  .sub-day .sub-day-qty{font-size:7.5px; font-weight:800; color:var(--yellow-deep); margin-top:1px; letter-spacing:.2px;}
   .sub-day.past-delivered .sub-day-dot{background:var(--green-dim);}
   .sub-day.past-skipped .sub-day-dot{background:var(--danger);}
   .sub-day.locked{opacity:.55;}
@@ -496,7 +497,7 @@
   .sub-cutoff-note{display:flex; align-items:center; gap:8px; margin:14px 16px 0; padding:10px 12px; border-radius:8px; background:var(--card-hi); font-size:11.5px; color:var(--muted); border:1px solid var(--line);}
 
   /* Day adjust bottom sheet */
-  .sheet-backdrop{position:absolute; inset:0; background:rgba(43,36,16,.45); z-index:70; display:none; align-items:flex-end; justify-content:center;}
+  .sheet-backdrop{position:fixed; inset:0; background:rgba(43,36,16,.45); z-index:210; display:none; align-items:flex-end; justify-content:center;}
   .sheet-backdrop.show{display:flex; animation:fadeIn .2s ease;}
   .adjust-sheet{background:var(--card); width:100%; max-width:480px; border-radius:16px 16px 0 0; padding:20px 18px 24px; animation:slideUp .28s cubic-bezier(.22,.9,.3,1);}
   .adjust-sheet-handle{width:36px; height:4px; border-radius:2px; background:var(--line); margin:0 auto 14px;}
@@ -508,8 +509,17 @@
   .adjust-days-label{font-size:12px; font-weight:700; color:var(--muted); margin-bottom:8px;}
   .adjust-days-row{display:flex; gap:8px; margin-bottom:18px;}
   .adjust-day-chip{flex:1; text-align:center; padding:10px 4px; border-radius:9px; border:1.5px solid var(--line); font-size:12.5px; font-weight:700; cursor:pointer; background:var(--card);}
+  .adjust-qty-chip{flex:1; text-align:center; padding:10px 4px; border-radius:9px; border:1.5px solid var(--line); font-size:12.5px; font-weight:700; cursor:pointer; background:var(--card); color:var(--ink);}
+  .adjust-qty-chip.selected{border-color:var(--green-dim); background:var(--green-light); color:var(--green-dim);}
   .adjust-day-chip.selected{border-color:var(--danger); background:#FBE4E0; color:var(--danger);}
   .adjust-day-chip[disabled]{opacity:.4; pointer-events:none;}
+  .lock-icon{width:56px; height:56px; border-radius:50%; background:#FBE4E0; display:flex; align-items:center; justify-content:center; margin:0 auto 14px;}
+  .custom-days-stepper{display:flex; align-items:center; justify-content:center; gap:18px; margin-bottom:10px;}
+  .custom-days-btn{width:38px; height:38px; border-radius:50%; background:var(--card-hi); border:1.5px solid var(--line); display:flex; align-items:center; justify-content:center; font-size:20px; font-weight:800; cursor:pointer; color:var(--ink); user-select:none;}
+  .custom-days-btn:active{background:var(--line);}
+  .custom-days-value{font-size:22px; font-weight:800; min-width:32px; text-align:center;}
+  .adjust-range-preview{text-align:center; font-size:12px; color:var(--muted); margin-bottom:14px; padding:8px; background:var(--card-hi); border-radius:8px;}
+  .adjust-extend-note{font-size:11px; color:var(--muted); background:var(--green-light); border:1px solid #CFEBD8; border-radius:8px; padding:8px 10px; margin-bottom:16px; line-height:1.4;}
 
   .swipe-track{position:relative; height:52px; border-radius:26px; background:var(--card-hi); border:1.5px solid var(--line); overflow:hidden; user-select:none;}
   .swipe-track-label{position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:12.5px; font-weight:800; color:var(--muted); letter-spacing:.3px; pointer-events:none;}
@@ -524,7 +534,7 @@
   .adjust-cancel{width:100%; text-align:center; margin-top:14px; font-size:12.5px; font-weight:700; color:var(--muted); cursor:pointer; padding:6px;}
 
   /* Confirmation tick overlay (reuses success-overlay pattern but scoped) */
-  .adjust-confirm-overlay{position:absolute; inset:0; background:rgba(255,253,246,.97); z-index:80; display:none; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:30px;}
+  .adjust-confirm-overlay{position:fixed; inset:0; background:rgba(255,253,246,.97); z-index:220; display:none; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:30px;}
   .adjust-confirm-overlay.show{display:flex; animation:fadeIn .25s ease;}
 
   /* Notifications panel */
@@ -547,7 +557,7 @@
   .notif-empty{text-align:center; padding:30px 10px; color:var(--muted); font-size:12.5px;}
 
   /* Renewal reminder popup */
-  .renew-backdrop{position:absolute; inset:0; background:rgba(43,36,16,.5); z-index:90; display:none; align-items:center; justify-content:center; padding:20px;}
+  .renew-backdrop{position:fixed; inset:0; background:rgba(43,36,16,.5); z-index:215; display:none; align-items:center; justify-content:center; padding:20px;}
   .renew-backdrop.show{display:flex; animation:fadeIn .25s ease;}
   .renew-card{background:var(--card); width:100%; max-width:340px; border-radius:16px; padding:24px 20px; text-align:center; animation:checkPop .4s cubic-bezier(.34,1.56,.64,1);}
   .renew-icon{width:64px; height:64px; border-radius:50%; background:#FFF3D6; display:flex; align-items:center; justify-content:center; margin:0 auto 14px;}
@@ -1402,33 +1412,74 @@
     <div class="sheet-backdrop" id="adjustSheetBackdrop">
       <div class="adjust-sheet">
         <div class="adjust-sheet-handle"></div>
-        <h3 id="adjustSheetTitle">Adjust Tomorrow's Delivery</h3>
-        <p id="adjustSheetSub">1 Litre Toned Milk &middot; scheduled for 7:00 AM</p>
 
-        <div class="adjust-toggle">
-          <div class="adjust-toggle-btn active" data-mode="deliver" id="adjustModeDeliver">Deliver as usual</div>
-          <div class="adjust-toggle-btn" data-mode="skip" id="adjustModeSkip">Skip delivery</div>
-        </div>
-
-        <div id="adjustSkipDaysBlock" style="display:none;">
-          <div class="adjust-days-label">Skip how many days?</div>
-          <div class="adjust-days-row" id="adjustDaysRow">
-            <div class="adjust-day-chip selected" data-days="1">1 Day</div>
-            <div class="adjust-day-chip" data-days="2">2 Days</div>
-            <div class="adjust-day-chip" data-days="3">3 Days</div>
+        <!-- LOCKED STATE (past 10 PM cutoff) -->
+        <div id="adjustLockedView" style="display:none; text-align:center; padding:6px 4px 4px;">
+          <div class="lock-icon">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
           </div>
+          <h3 style="margin:0 0 6px;">Too late to skip tomorrow</h3>
+          <p style="margin:0 0 20px;">The 10:00 PM cutoff for tomorrow's delivery has passed. Your <b>1 Litre Toned Milk</b> will be delivered as usual at 7:00 AM. You can still adjust the day after tomorrow onward.</p>
+          <button class="success-cta" id="adjustLockedOk" style="width:100%;">Got it</button>
         </div>
 
-        <div class="swipe-track" id="swipeTrack">
-          <div class="swipe-fill" id="swipeFill"></div>
-          <div class="swipe-track-label" id="swipeLabel">Swipe to confirm</div>
-          <div class="swipe-thumb" id="swipeThumb">
-            <svg viewBox="0 0 24 24" fill="none" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+        <!-- STEP 1: choose deliver / skip -->
+        <div id="adjustStepChoice">
+          <h3 id="adjustSheetTitle">Adjust Tomorrow's Delivery</h3>
+          <p id="adjustSheetSub">1 Litre Toned Milk &middot; scheduled for 7:00 AM</p>
+
+          <div class="adjust-toggle">
+            <div class="adjust-toggle-btn active" data-mode="deliver" id="adjustModeDeliver">Deliver as usual</div>
+            <div class="adjust-toggle-btn" data-mode="skip" id="adjustModeSkip">Skip delivery</div>
           </div>
-        </div>
-        <div class="swipe-cutoff-msg" id="swipeCutoffMsg">It's past 10 PM — tomorrow's delivery is already locked in. You can still adjust from the day after.</div>
 
-        <div class="adjust-cancel" id="adjustCancelBtn">Cancel</div>
+          <div id="adjustQtyBlock">
+            <div class="adjust-days-label">Quantity for this delivery</div>
+            <div class="adjust-days-row" id="adjustQtyRow" style="margin-bottom:16px;">
+              <div class="adjust-qty-chip selected" data-qty="500ml">500 ml</div>
+              <div class="adjust-qty-chip" data-qty="1L">1 Litre</div>
+            </div>
+          </div>
+
+          <div id="adjustSkipDaysBlock" style="display:none;">
+            <div class="adjust-days-label">Skip how many days?</div>
+            <div class="adjust-days-row" id="adjustDaysRow">
+              <div class="adjust-day-chip selected" data-days="1">1 Day</div>
+              <div class="adjust-day-chip" data-days="2">2 Days</div>
+              <div class="adjust-day-chip" data-days="3">3 Days</div>
+              <div class="adjust-day-chip" data-days="custom">Custom</div>
+            </div>
+            <div id="adjustCustomDaysBlock" style="display:none;">
+              <div class="adjust-days-label">Skip how many days? (starting tomorrow)</div>
+              <div class="custom-days-stepper">
+                <div class="custom-days-btn" id="customDaysMinus">−</div>
+                <div class="custom-days-value" id="customDaysValue">4</div>
+                <div class="custom-days-btn" id="customDaysPlus">+</div>
+              </div>
+              <div class="adjust-range-preview" id="adjustRangePreview"></div>
+            </div>
+            <div class="adjust-extend-note">Your plan's end date will move forward by the same number of days you skip, so you still get every delivery you paid for.</div>
+          </div>
+
+          <button class="success-cta" id="adjustNextBtn" style="width:100%; margin-top:4px;">Continue</button>
+          <div class="adjust-cancel" id="adjustCancelBtn">Cancel</div>
+        </div>
+
+        <!-- STEP 2: confirm summary + swipe -->
+        <div id="adjustStepConfirm" style="display:none;">
+          <h3 id="adjustConfirmStepTitle">Confirm Skip</h3>
+          <p id="adjustConfirmStepSub">You're skipping delivery for the selected day(s).</p>
+
+          <div class="swipe-track" id="swipeTrack">
+            <div class="swipe-fill" id="swipeFill"></div>
+            <div class="swipe-track-label" id="swipeLabel">Swipe to confirm</div>
+            <div class="swipe-thumb" id="swipeThumb">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+            </div>
+          </div>
+
+          <div class="adjust-cancel" id="adjustBackBtn">Back</div>
+        </div>
       </div>
     </div>
 
@@ -2929,7 +2980,7 @@
 
     // ---- Mock plan state ----
     const planStart = new Date(); planStart.setDate(planStart.getDate() - 6); planStart.setHours(0,0,0,0);
-    const planEnd = new Date(planStart); planEnd.setDate(planEnd.getDate() + 29);
+    let planEnd = new Date(planStart); planEnd.setDate(planEnd.getDate() + 29);
 
     // day status: 'delivered' | 'skipped' | 'normal' (future, default)
     // key = 'YYYY-MM-DD'
@@ -2992,22 +3043,23 @@
 
         const inPlan = d >= planStart && d <= planEnd;
         const status = inPlan ? statOf(d) : null;
+        const qtyTag = (inPlan && dayQty[dkey(d)]) ? `<div class="sub-day-qty">${dayQty[dkey(d)]}</div>` : '';
 
         if(!inPlan){
           cell.classList.add('locked');
           cell.innerHTML = `<span>${dnum}</span>`;
         } else if(status === 'today'){
           cell.classList.add('today','upcoming-normal');
-          cell.innerHTML = `<span>${dnum}</span><div class="sub-day-dot" style="background:var(--yellow-deep);"></div>`;
+          cell.innerHTML = `<span>${dnum}</span><div class="sub-day-dot" style="background:var(--yellow-deep);"></div>${qtyTag}`;
         } else if(status === 'delivered'){
           cell.classList.add('past-delivered');
-          cell.innerHTML = `<span>${dnum}</span><div class="sub-day-dot"></div>`;
+          cell.innerHTML = `<span>${dnum}</span><div class="sub-day-dot"></div>${qtyTag}`;
         } else if(status === 'skipped'){
           cell.classList.add(d < todayMid() ? 'past-skipped' : 'upcoming-skip');
           cell.innerHTML = `<span>${dnum}</span><div class="sub-day-dot"></div>`;
         } else {
           cell.classList.add('upcoming-normal');
-          cell.innerHTML = `<span>${dnum}</span>`;
+          cell.innerHTML = `<span>${dnum}</span>${qtyTag}`;
         }
 
         if(inPlan && d > todayMid()){
@@ -3053,28 +3105,38 @@
     let adjustTargetDate = null;
     let adjustMode = 'deliver';
     let adjustSkipDays = 1;
+    let customSkipDays = 4;
+    const defaultQty = '1L';
+    const dayQty = {}; // key = 'YYYY-MM-DD' -> '500ml' | '1L' (only set when changed from default)
+    let adjustQty = defaultQty;
 
     function openAdjustSheet(d){
       adjustTargetDate = d;
       adjustMode = 'deliver';
       adjustSkipDays = 1;
+      customSkipDays = 4;
+      adjustQty = dayQty[dkey(d)] || defaultQty;
+
       document.getElementById('adjustModeDeliver').classList.add('active');
       document.getElementById('adjustModeSkip').classList.remove('active');
       document.getElementById('adjustSkipDaysBlock').style.display = 'none';
+      document.getElementById('adjustCustomDaysBlock').style.display = 'none';
       document.querySelectorAll('.adjust-day-chip').forEach(c=>c.classList.remove('selected'));
       document.querySelector('.adjust-day-chip[data-days="1"]').classList.add('selected');
+      document.getElementById('customDaysValue').textContent = customSkipDays;
+
+      document.querySelectorAll('.adjust-qty-chip').forEach(c=>c.classList.toggle('selected', c.dataset.qty === adjustQty));
 
       const isTomorrow = sameDay(d, addDays(todayMid(),1));
       const label = isTomorrow ? "Tomorrow" : d.toLocaleDateString('en-IN',{weekday:'long', day:'numeric', month:'short'});
       document.getElementById('adjustSheetTitle').textContent = `Adjust ${label}'s Delivery`;
-      document.getElementById('adjustSheetSub').textContent = `1 Litre Toned Milk · scheduled for 7:00 AM`;
+      document.getElementById('adjustSheetSub').textContent = `${adjustQty} Toned Milk · scheduled for 7:00 AM`;
 
+      // Only tomorrow is affected by the 10 PM cutoff — every other future day stays freely editable.
       const locked = isTomorrow && pastCutoff();
-      const swipeTrack = document.getElementById('swipeTrack');
-      swipeTrack.classList.toggle('locked', locked);
-      document.getElementById('swipeCutoffMsg').classList.toggle('show', locked);
-      document.getElementById('swipeLabel').textContent = locked ? 'Locked for tonight' : 'Swipe to confirm';
-      resetSwipe();
+      document.getElementById('adjustLockedView').style.display = locked ? 'block' : 'none';
+      document.getElementById('adjustStepChoice').style.display = locked ? 'none' : 'block';
+      document.getElementById('adjustStepConfirm').style.display = 'none';
 
       document.getElementById('adjustSheetBackdrop').classList.add('show');
     }
@@ -3083,6 +3145,7 @@
       document.getElementById('adjustSheetBackdrop').classList.remove('show');
     }
     document.getElementById('adjustCancelBtn').addEventListener('click', closeAdjustSheet);
+    document.getElementById('adjustLockedOk').addEventListener('click', closeAdjustSheet);
     document.getElementById('adjustSheetBackdrop').addEventListener('click', (e)=>{
       if(e.target.id === 'adjustSheetBackdrop') closeAdjustSheet();
     });
@@ -3092,22 +3155,86 @@
       this.classList.add('active');
       document.getElementById('adjustModeSkip').classList.remove('active');
       document.getElementById('adjustSkipDaysBlock').style.display = 'none';
-      document.getElementById('swipeLabel').textContent = document.getElementById('swipeTrack').classList.contains('locked') ? 'Locked for tonight' : 'Swipe to confirm';
+      document.getElementById('adjustQtyBlock').style.display = 'block';
     });
     document.getElementById('adjustModeSkip').addEventListener('click', function(){
       adjustMode = 'skip';
       this.classList.add('active');
       document.getElementById('adjustModeDeliver').classList.remove('active');
       document.getElementById('adjustSkipDaysBlock').style.display = 'block';
-      document.getElementById('swipeLabel').textContent = document.getElementById('swipeTrack').classList.contains('locked') ? 'Locked for tonight' : 'Swipe to skip';
+      document.getElementById('adjustQtyBlock').style.display = 'none';
     });
+
+    document.querySelectorAll('.adjust-qty-chip').forEach(chip=>{
+      chip.addEventListener('click', function(){
+        document.querySelectorAll('.adjust-qty-chip').forEach(c=>c.classList.remove('selected'));
+        this.classList.add('selected');
+        adjustQty = this.dataset.qty;
+      });
+    });
+
+    function updateCustomPreview(){
+      const endDate = addDays(adjustTargetDate, customSkipDays-1);
+      document.getElementById('adjustRangePreview').textContent =
+        `Skipping ${adjustTargetDate.toLocaleDateString('en-IN',{day:'numeric',month:'short'})} – ${endDate.toLocaleDateString('en-IN',{day:'numeric',month:'short'})} (${customSkipDays} days). Plan end date moves to ${addDays(planEnd, customSkipDays).toLocaleDateString('en-IN',{day:'numeric',month:'short'})}.`;
+    }
 
     document.querySelectorAll('.adjust-day-chip').forEach(chip=>{
       chip.addEventListener('click', function(){
         document.querySelectorAll('.adjust-day-chip').forEach(c=>c.classList.remove('selected'));
         this.classList.add('selected');
-        adjustSkipDays = parseInt(this.dataset.days, 10);
+        if(this.dataset.days === 'custom'){
+          adjustSkipDays = customSkipDays;
+          document.getElementById('adjustCustomDaysBlock').style.display = 'block';
+          updateCustomPreview();
+        } else {
+          adjustSkipDays = parseInt(this.dataset.days, 10);
+          document.getElementById('adjustCustomDaysBlock').style.display = 'none';
+        }
       });
+    });
+
+    document.getElementById('customDaysMinus').addEventListener('click', ()=>{
+      customSkipDays = Math.max(2, customSkipDays - 1);
+      document.getElementById('customDaysValue').textContent = customSkipDays;
+      adjustSkipDays = customSkipDays;
+      updateCustomPreview();
+    });
+    document.getElementById('customDaysPlus').addEventListener('click', ()=>{
+      customSkipDays = Math.min(14, customSkipDays + 1);
+      document.getElementById('customDaysValue').textContent = customSkipDays;
+      adjustSkipDays = customSkipDays;
+      updateCustomPreview();
+    });
+
+    document.getElementById('adjustNextBtn').addEventListener('click', ()=>{
+      const target = adjustTargetDate;
+      const confirmTitle = document.getElementById('adjustConfirmStepTitle');
+      const confirmSub = document.getElementById('adjustConfirmStepSub');
+
+      if(adjustMode === 'deliver'){
+        const dayLabel = sameDay(target, addDays(todayMid(),1)) ? 'Tomorrow\'s' : `${target.toLocaleDateString('en-IN',{weekday:'long', day:'numeric', month:'short'})}'s`;
+        confirmTitle.textContent = 'Confirm Delivery';
+        confirmSub.textContent = `${dayLabel} ${adjustQty} Toned Milk will be delivered as usual at 7:00 AM. Swipe to confirm.`;
+        document.getElementById('swipeLabel').textContent = 'Swipe to confirm';
+      } else {
+        const endDate = addDays(target, adjustSkipDays-1);
+        const rangeLabel = adjustSkipDays === 1
+          ? target.toLocaleDateString('en-IN',{weekday:'long', day:'numeric', month:'short'})
+          : `${target.toLocaleDateString('en-IN',{day:'numeric', month:'short'})} – ${endDate.toLocaleDateString('en-IN',{day:'numeric', month:'short'})}`;
+        confirmTitle.textContent = adjustSkipDays === 1 ? 'Confirm Skip' : `Confirm ${adjustSkipDays}-Day Skip`;
+        confirmSub.textContent = `No milk will be delivered on ${rangeLabel}. Your plan end date will move to ${addDays(planEnd, adjustSkipDays).toLocaleDateString('en-IN',{day:'numeric',month:'short'})} to make up for it. Swipe to confirm.`;
+        document.getElementById('swipeLabel').textContent = 'Swipe to skip';
+      }
+
+      document.getElementById('adjustStepChoice').style.display = 'none';
+      document.getElementById('adjustStepConfirm').style.display = 'block';
+      resetSwipe();
+    });
+
+    document.getElementById('adjustBackBtn').addEventListener('click', ()=>{
+      document.getElementById('adjustStepConfirm').style.display = 'none';
+      document.getElementById('adjustStepChoice').style.display = 'block';
     });
 
     /* ---------- Swipe-to-confirm slider ---------- */
@@ -3128,7 +3255,6 @@
     }
 
     function onDragStart(e){
-      if(swipeTrack.classList.contains('locked')) return;
       dragging = true;
       computeSwipeMax();
       swipeStartX = (e.touches ? e.touches[0].clientX : e.clientX);
@@ -3166,7 +3292,6 @@
     window.addEventListener('touchend', onDragEnd);
 
     function completeSwipe(){
-      if(swipeTrack.classList.contains('locked')) return;
       applyAdjustment();
     }
 
@@ -3179,31 +3304,35 @@
       if(adjustMode === 'skip'){
         for(let i=0; i<adjustSkipDays; i++){
           const d = addDays(target, i);
-          if(d > planEnd) break;
           dayStatus[dkey(d)] = 'skipped';
-          const cell = document.querySelector(`.sub-day[data-date="${dkey(d)}"]`);
-          if(cell) cell.classList.add('just-updated');
         }
+        // Extend the plan end date by the number of skipped days so the user
+        // still receives every delivery they paid for.
+        planEnd = addDays(planEnd, adjustSkipDays);
+
         const endDate = addDays(target, adjustSkipDays-1);
         const rangeLabel = adjustSkipDays === 1
           ? target.toLocaleDateString('en-IN',{weekday:'long', day:'numeric', month:'short'})
           : `${target.toLocaleDateString('en-IN',{day:'numeric', month:'short'})} – ${endDate.toLocaleDateString('en-IN',{day:'numeric', month:'short'})}`;
         titleEl.textContent = adjustSkipDays === 1 ? 'Delivery Skipped' : `${adjustSkipDays} Deliveries Skipped`;
-        subEl.textContent = `No milk will be delivered on ${rangeLabel}. You can undo this anytime before 10 PM the night before.`;
+        subEl.textContent = `No milk will be delivered on ${rangeLabel}. Your plan now runs until ${planEnd.toLocaleDateString('en-IN',{day:'numeric',month:'short'})} to make up for it.`;
         pushNotification({
           title: adjustSkipDays === 1 ? 'Delivery skipped' : `${adjustSkipDays} days skipped`,
-          sub: `Skipped: ${rangeLabel}`,
+          sub: `Skipped: ${rangeLabel} · plan extended to ${planEnd.toLocaleDateString('en-IN',{day:'numeric',month:'short'})}`,
           kind: 'skip'
         });
       } else {
         dayStatus[dkey(target)] = 'normal';
-        const cell = document.querySelector(`.sub-day[data-date="${dkey(target)}"]`);
-        if(cell) cell.classList.add('just-updated');
+        if(adjustQty === defaultQty){
+          delete dayQty[dkey(target)];
+        } else {
+          dayQty[dkey(target)] = adjustQty;
+        }
         titleEl.textContent = 'Delivery Confirmed';
-        subEl.textContent = `Your ${target.toLocaleDateString('en-IN',{weekday:'long', day:'numeric', month:'short'})} delivery is back on as usual.`;
+        subEl.textContent = `Your ${target.toLocaleDateString('en-IN',{weekday:'long', day:'numeric', month:'short'})} delivery (${adjustQty}) is confirmed.`;
         pushNotification({
           title: 'Delivery confirmed',
-          sub: `Back to normal for ${target.toLocaleDateString('en-IN',{day:'numeric', month:'short'})}`,
+          sub: `${adjustQty} on ${target.toLocaleDateString('en-IN',{day:'numeric', month:'short'})}`,
           kind: 'deliver'
         });
       }
