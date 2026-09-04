@@ -1711,9 +1711,34 @@
     let adjustMode = 'deliver';
     let adjustSkipDays = 1;
     let customSkipDays = 4;
-    const defaultQty = '1L';
+    // This plan's daily baseline is 500ml — bumping a day up to 1L eats
+    // into a future day automatically (see QTY_ML / extraMlBalance below),
+    // rather than just quietly billing extra.
+    const defaultQty = '500ml';
     const dayQty = {}; // key = 'YYYY-MM-DD' -> '500ml' | '1L' (only set when changed from default)
     let adjustQty = defaultQty;
+
+    // Millilitres per option, and a running fractional balance so the plan
+    // end date only ever shifts by whole days once enough extra/short ml
+    // has accumulated (matters if the plan baseline is ever changed to
+    // something the options don't divide evenly).
+    const QTY_ML = { '500ml': 500, '1L': 1000 };
+    let extraMlBalance = 0;
+
+    // How many whole days a day's quantity change is worth against the
+    // plan's baseline — e.g. +500ml over a 500ml baseline = +1 day eaten.
+    function applyQtyToPlanLength(prevQty, newQty){
+      const baseMl = QTY_ML[defaultQty];
+      const delta = QTY_ML[newQty] - QTY_ML[prevQty];
+      if(!delta) return 0;
+      extraMlBalance += delta;
+      const wholeDayShift = Math.trunc(extraMlBalance / baseMl);
+      if(wholeDayShift !== 0){
+        planEnd = addDays(planEnd, -wholeDayShift);
+        extraMlBalance -= wholeDayShift * baseMl;
+      }
+      return wholeDayShift;
+    }
 
     function openAdjustSheet(d){
       adjustTargetDate = d;
@@ -1820,7 +1845,15 @@
       if(adjustMode === 'deliver'){
         const dayLabel = sameDay(target, addDays(todayMid(),1)) ? 'Tomorrow\'s' : `${target.toLocaleDateString('en-IN',{weekday:'long', day:'numeric', month:'short'})}'s`;
         confirmTitle.textContent = 'Confirm Delivery';
-        confirmSub.textContent = `${dayLabel} ${adjustQty} Toned Milk will be delivered as usual at 7:00 AM. Swipe to confirm.`;
+        const prevQty = dayQty[dkey(target)] || defaultQty;
+        const projectedShift = QTY_ML[adjustQty] - QTY_ML[prevQty];
+        let extraNote = '';
+        if(projectedShift > 0){
+          extraNote = ` Extra milk beyond your ${defaultQty} plan will use up a future delivery day.`;
+        } else if(projectedShift < 0){
+          extraNote = ` Taking less than your ${defaultQty} plan today will give you back a delivery day.`;
+        }
+        confirmSub.textContent = `${dayLabel} ${adjustQty} Toned Milk will be delivered as usual at 7:00 AM.${extraNote} Swipe to confirm.`;
         document.getElementById('swipeLabel').textContent = 'Swipe to confirm';
       } else {
         const endDate = addDays(target, adjustSkipDays-1);
@@ -1928,16 +1961,32 @@
         });
       } else {
         dayStatus[dkey(target)] = 'normal';
+        const key = dkey(target);
+        const prevQty = dayQty[key] || defaultQty;
+
         if(adjustQty === defaultQty){
-          delete dayQty[dkey(target)];
+          delete dayQty[key];
         } else {
-          dayQty[dkey(target)] = adjustQty;
+          dayQty[key] = adjustQty;
         }
+
+        // Quantity above/below the plan's daily baseline (500ml) borrows
+        // from or pays back a future day, so a 30-day plan with one 1L
+        // day (instead of the usual 500ml) automatically finishes in 29
+        // days rather than silently over-delivering.
+        const dayShift = applyQtyToPlanLength(prevQty, adjustQty);
+
         titleEl.textContent = 'Delivery Confirmed';
-        subEl.textContent = `Your ${target.toLocaleDateString('en-IN',{weekday:'long', day:'numeric', month:'short'})} delivery (${adjustQty}) is confirmed.`;
+        let shiftNote = '';
+        if(dayShift > 0){
+          shiftNote = ` Since this is more than your ${defaultQty}/day plan, your plan now ends ${dayShift === 1 ? 'a day' : dayShift + ' days'} earlier — ${planEnd.toLocaleDateString('en-IN',{day:'numeric',month:'short'})}.`;
+        } else if(dayShift < 0){
+          shiftNote = ` Since this is less than your ${defaultQty}/day plan, your plan now runs ${Math.abs(dayShift) === 1 ? 'a day' : Math.abs(dayShift) + ' days'} longer — until ${planEnd.toLocaleDateString('en-IN',{day:'numeric',month:'short'})}.`;
+        }
+        subEl.textContent = `Your ${target.toLocaleDateString('en-IN',{weekday:'long', day:'numeric', month:'short'})} delivery (${adjustQty}) is confirmed.${shiftNote}`;
         pushNotification({
           title: 'Delivery confirmed',
-          sub: `${adjustQty} on ${target.toLocaleDateString('en-IN',{day:'numeric', month:'short'})}`,
+          sub: `${adjustQty} on ${target.toLocaleDateString('en-IN',{day:'numeric', month:'short'})}${dayShift ? ' · plan now ends ' + planEnd.toLocaleDateString('en-IN',{day:'numeric',month:'short'}) : ''}`,
           kind: 'deliver'
         });
       }
