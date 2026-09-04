@@ -86,6 +86,46 @@
     goToScreen('cart');
   });
 
+  // ---- Bottom nav vs. soft keyboard ----
+  // #app's height is 100dvh, and on Android Chrome (and iOS Safari 15+)
+  // that value shrinks when the soft keyboard opens, dragging this
+  // position:absolute; bottom:0 bar up into the middle of the screen
+  // instead of staying docked at the real bottom. Rather than fight the
+  // viewport-resize quirks across browsers, we just slide the nav fully
+  // off-screen whenever a text field is focused, and bring it back once
+  // the keyboard closes — the same pattern native-feeling apps use.
+  (function keyboardAwareNav(){
+    const bottomNav = document.querySelector('.bottomnav');
+    if(!bottomNav) return;
+    let openFields = 0;
+    let hideTimer = null;
+    function isTextField(el){
+      if(!el) return false;
+      if(el.tagName === 'TEXTAREA') return true;
+      if(el.tagName === 'INPUT'){
+        const skip = ['button','checkbox','radio','range','submit','file','color'];
+        return !skip.includes((el.type || 'text').toLowerCase());
+      }
+      return false;
+    }
+    document.addEventListener('focusin', (e)=>{
+      if(!isTextField(e.target)) return;
+      openFields++;
+      clearTimeout(hideTimer);
+      bottomNav.classList.add('kb-hidden');
+    });
+    document.addEventListener('focusout', (e)=>{
+      if(!isTextField(e.target)) return;
+      openFields = Math.max(0, openFields - 1);
+      // Small delay avoids a flicker when the keyboard stays open while
+      // focus moves from one field straight to another.
+      clearTimeout(hideTimer);
+      hideTimer = setTimeout(()=>{
+        if(openFields === 0) bottomNav.classList.remove('kb-hidden');
+      }, 120);
+    });
+  })();
+
   // ---- Product filter chips ----
   document.querySelectorAll('#prodFilterRow .cat-chip').forEach(chip=>{
     chip.addEventListener('click', ()=>{
@@ -896,7 +936,10 @@
   const newAddrForm = document.getElementById('newAddrForm');
   const cancelNewAddrBtn = document.getElementById('cancelNewAddrBtn');
   const saveNewAddrBtn = document.getElementById('saveNewAddrBtn');
-  let pendingAddrCoords = null; // { lat, lng, accuracy, radius } captured from live location
+  let pendingAddrCoords = null; // { lat, lng, accuracy, radius, geo } — final point that gets saved
+  let detCapturedGPS = null;    // { lat, lng } — the raw GPS fix, kept so "recenter" can snap back to it
+  let detManuallyAdjusted = false; // true once the user has dragged the map to fine-tune the pin
+  let detWatchId = null;        // active navigator.geolocation.watchPosition id, if any
 
   function resetNewAddrForm(){
     newAddrForm.style.display = 'none';
@@ -906,8 +949,12 @@
     document.getElementById('newAddrRoom').value = '';
     document.getElementById('newAddrFull').value = '';
     document.getElementById('detGeoStatus').style.display = 'none';
-    document.getElementById('detGeoMap').style.display = 'none';
+    const geoMapWrap = document.getElementById('detGeoMapWrap');
+    if(geoMapWrap) geoMapWrap.style.display = 'none';
+    if(detWatchId !== null){ navigator.geolocation.clearWatch(detWatchId); detWatchId = null; }
     pendingAddrCoords = null;
+    detCapturedGPS = null;
+    detManuallyAdjusted = false;
   }
 
   if(addNewAddrBtn) addNewAddrBtn.addEventListener('click', ()=>{
@@ -961,18 +1008,42 @@
     showToast('Address saved — it\u2019ll stay set until you remove it');
   });
 
-  // "Share live location" inside the details form -> captures exact
-  // GPS coordinates (not just the area name) and reverse-geocodes the
-  // street/area/landmark text as a starting point the user can edit.
+  // "Share live location" inside the details form -> captures exact GPS
+  // coordinates (not just the area name), reverse-geocodes the street/
+  // area/landmark text as a starting point, and lets the user fine-tune
+  // the exact spot by dragging the map under a pin that's fixed in the
+  // center of the card (same UX as Swiggy/Zomato/Uber "confirm location").
   const detUseLocBtn = document.getElementById('detUseLocBtn');
   const detGeoStatus = document.getElementById('detGeoStatus');
+  const detGeoMapWrap = document.getElementById('detGeoMapWrap');
   const detGeoMap = document.getElementById('detGeoMap');
+  const detGeoPin = document.getElementById('detGeoPin');
+  const detGeoRecenterBtn = document.getElementById('detGeoRecenterBtn');
   let detLeafletMap = null;
   let detLeafletCircle = null;
-  const ADDRESS_RADIUS_METERS = 50;
+  const ADDRESS_RADIUS_METERS = 50;   // delivery-radius circle shown around the pin
+  const TARGET_ACCURACY_M = 50;       // stop early once GPS is at least this precise
+  const MAX_ACQUIRE_MS = 15000;       // give up waiting for a better fix after this long
+
+  function geoStatusText(){
+    if(!pendingAddrCoords) return '';
+    if(detManuallyAdjusted){
+      return `<span class="geo-dot"></span> Pin adjusted manually &middot; ${ADDRESS_RADIUS_METERS}m delivery radius shown below`;
+    }
+    const acc = Math.round(pendingAddrCoords.accuracy || 0);
+    const d = pendingAddrCoords.geo || {};
+    const dirNote = d.landmarkDir ? ` &middot; ${d.landmarkDir}` : '';
+    const pinNote = d.pincode ? ` &middot; PIN ${d.pincode}` : '';
+    return `<span class="geo-dot"></span> Live location captured (\u00b1${acc}m GPS accuracy)${dirNote}${pinNote} &middot; ${ADDRESS_RADIUS_METERS}m delivery radius shown below &mdash; drag the map to fine-tune`;
+  }
+  function refreshGeoStatus(){
+    if(!pendingAddrCoords) return;
+    detGeoStatus.style.display = 'flex';
+    detGeoStatus.innerHTML = geoStatusText();
+  }
 
   function renderGeoMap(lat, lng){
-    detGeoMap.style.display = 'block';
+    detGeoMapWrap.style.display = 'block';
     if(!window.L){
       // Leaflet failed to load (offline/blocked) — status text above still shows accuracy.
       return;
@@ -983,7 +1054,6 @@
         maxZoom: 19,
         attribution: '&copy; OpenStreetMap'
       }).addTo(detLeafletMap);
-      detLeafletMarker = L.marker([lat, lng]).addTo(detLeafletMap);
       detLeafletCircle = L.circle([lat, lng], {
         radius: ADDRESS_RADIUS_METERS,
         color: '#4CAF6D',
@@ -991,16 +1061,43 @@
         fillOpacity: 0.15,
         weight: 2
       }).addTo(detLeafletMap);
+
+      // The pin never moves on screen — it's a fixed overlay dead-center
+      // of the card. Dragging the map underneath it is what changes the
+      // chosen point: whatever ends up under the pin is the address.
+      detLeafletMap.on('movestart', ()=> detGeoPin.classList.add('dragging'));
+      detLeafletMap.on('move', ()=>{
+        detLeafletCircle.setLatLng(detLeafletMap.getCenter());
+      });
+      detLeafletMap.on('moveend', ()=>{
+        detGeoPin.classList.remove('dragging');
+        const c = detLeafletMap.getCenter();
+        if(pendingAddrCoords){
+          pendingAddrCoords.lat = c.lat;
+          pendingAddrCoords.lng = c.lng;
+        }
+        detManuallyAdjusted = true;
+        refreshGeoStatus();
+      });
     } else {
       detLeafletMap.setView([lat, lng], 17);
-      detLeafletMarker.setLatLng([lat, lng]);
       detLeafletCircle.setLatLng([lat, lng]);
     }
-    // Fit the view so the full 50m circle is visible
-    detLeafletMap.fitBounds(detLeafletCircle.getBounds(), { padding:[16,16] });
     setTimeout(()=> detLeafletMap.invalidateSize(), 150);
   }
-  let detLeafletMarker = null;
+
+  if(detGeoRecenterBtn) detGeoRecenterBtn.addEventListener('click', ()=>{
+    if(!detCapturedGPS || !detLeafletMap) return;
+    detManuallyAdjusted = false;
+    if(pendingAddrCoords){
+      pendingAddrCoords.lat = detCapturedGPS.lat;
+      pendingAddrCoords.lng = detCapturedGPS.lng;
+    }
+    detLeafletMap.setView([detCapturedGPS.lat, detCapturedGPS.lng], 17);
+    detLeafletCircle.setLatLng([detCapturedGPS.lat, detCapturedGPS.lng]);
+    refreshGeoStatus();
+    showToast('Pin reset to your GPS location');
+  });
 
   if(detUseLocBtn) detUseLocBtn.addEventListener('click', ()=>{
     const btnText = document.getElementById('detUseLocBtnText');
@@ -1008,47 +1105,83 @@
       showToast('Geolocation not supported on this device');
       return;
     }
+    if(detWatchId !== null){ navigator.geolocation.clearWatch(detWatchId); detWatchId = null; }
+
+    detManuallyAdjusted = false;
     detUseLocBtn.classList.add('loading');
-    btnText.textContent = 'Fetching live location...';
+    btnText.textContent = 'Getting precise location...';
     const spinner = document.createElement('span');
     spinner.className = 'spinner';
     detUseLocBtn.prepend(spinner);
+    detGeoStatus.style.display = 'flex';
+    detGeoStatus.innerHTML = '<span class="geo-dot"></span> Locating you \u2014 this gets more accurate over a few seconds...';
 
-    navigator.geolocation.getCurrentPosition(async (pos)=>{
-      const { latitude, longitude, accuracy } = pos.coords;
-      pendingAddrCoords = { lat: latitude, lng: longitude, accuracy, radius: ADDRESS_RADIUS_METERS };
+    let best = null;      // best { lat, lng, accuracy } seen across all readings
+    let settled = false;  // guards against finishing twice (watch fire + timeout race)
 
-      const d = await reverseGeocodeDetailed(latitude, longitude);
-      pendingAddrCoords.geo = d; // keep the full structured breakdown with the address
+    function finishAcquiring(){
+      if(settled) return;
+      settled = true;
+      clearTimeout(maxWaitTimer);
+      if(detWatchId !== null){ navigator.geolocation.clearWatch(detWatchId); detWatchId = null; }
+      detUseLocBtn.classList.remove('loading');
+      btnText.textContent = 'Share live location';
+      spinner.remove();
+
+      if(!best){
+        pendingAddrCoords = null;
+        detGeoStatus.style.display = 'none';
+        showToast('Could not fetch live location, try again');
+        return;
+      }
+
+      detCapturedGPS = { lat: best.lat, lng: best.lng };
+      pendingAddrCoords = { lat: best.lat, lng: best.lng, accuracy: best.accuracy, radius: ADDRESS_RADIUS_METERS };
+      refreshGeoStatus();
+      renderGeoMap(best.lat, best.lng);
+      document.getElementById('newAddrBuilding').focus();
 
       // Pre-fill the exact street/colony/area/city/pincode text; house
       // number goes into the Building field if one was detected, so the
       // user only has to confirm/adjust rather than type it all out.
-      document.getElementById('newAddrFull').value = d.full;
-      if(d.houseNumber && !document.getElementById('newAddrBuilding').value){
-        document.getElementById('newAddrBuilding').value = d.houseNumber;
+      reverseGeocodeDetailed(best.lat, best.lng).then(d=>{
+        if(!pendingAddrCoords) return; // form was reset while this was in flight
+        pendingAddrCoords.geo = d;
+        document.getElementById('newAddrFull').value = d.full;
+        if(d.houseNumber && !document.getElementById('newAddrBuilding').value){
+          document.getElementById('newAddrBuilding').value = d.houseNumber;
+        }
+        if(!document.getElementById('newAddrLabel').value) document.getElementById('newAddrLabel').value = 'Current location';
+        refreshGeoStatus();
+      });
+    }
+
+    // Keep sampling fixes (accuracy typically improves over the first
+    // several seconds as more satellites lock in) until we hit a good
+    // reading, or MAX_ACQUIRE_MS elapses — whichever comes first.
+    const maxWaitTimer = setTimeout(finishAcquiring, MAX_ACQUIRE_MS);
+
+    detWatchId = navigator.geolocation.watchPosition((pos)=>{
+      const { latitude, longitude, accuracy } = pos.coords;
+      if(!best || accuracy < best.accuracy){
+        best = { lat: latitude, lng: longitude, accuracy };
       }
-      if(!document.getElementById('newAddrLabel').value) document.getElementById('newAddrLabel').value = 'Current location';
-
-      detGeoStatus.style.display = 'flex';
-      const dirNote = d.landmarkDir ? ` &middot; ${d.landmarkDir}` : '';
-      const pinNote = d.pincode ? ` &middot; PIN ${d.pincode}` : '';
-      detGeoStatus.innerHTML = `<span class="geo-dot"></span> Live location captured (\u00b1${Math.round(accuracy)}m GPS accuracy)${dirNote}${pinNote} &middot; ${ADDRESS_RADIUS_METERS}m delivery radius shown below`;
-      renderGeoMap(latitude, longitude);
-
-      detUseLocBtn.classList.remove('loading');
-      btnText.textContent = 'Share live location';
-      spinner.remove();
-      document.getElementById('newAddrBuilding').focus();
+      detGeoStatus.innerHTML = `<span class="geo-dot"></span> Narrowing down your location \u2014 currently \u00b1${Math.round(accuracy)}m...`;
+      if(accuracy <= TARGET_ACCURACY_M){
+        finishAcquiring();
+      }
     }, (err)=>{
+      settled = true;
+      clearTimeout(maxWaitTimer);
+      if(detWatchId !== null){ navigator.geolocation.clearWatch(detWatchId); detWatchId = null; }
       detUseLocBtn.classList.remove('loading');
       btnText.textContent = 'Share live location';
       spinner.remove();
       pendingAddrCoords = null;
       detGeoStatus.style.display = 'none';
-      detGeoMap.style.display = 'none';
+      detGeoMapWrap.style.display = 'none';
       showToast(err && err.code === 1 ? 'Location permission denied — turn it on to add an address' : 'Could not fetch live location, try again');
-    }, { enableHighAccuracy:true, timeout:8000, maximumAge:0 });
+    }, { enableHighAccuracy:true, timeout:MAX_ACQUIRE_MS, maximumAge:0 });
   });
 
   // Delivery note quick chips (fills the textarea, still editable)
