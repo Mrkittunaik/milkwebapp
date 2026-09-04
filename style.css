@@ -716,3 +716,151 @@
   }
   .login-otp-boxes input:focus{outline:none; border-color:var(--yellow-deep);}
   .login-link-btn{background:none; border:none; color:var(--green-dim); font-weight:700; font-size:12.5px; cursor:pointer; display:block; margin:12px auto 0; text-align:center;}
+
+  /* =========================================================
+     PAYMENT RESUME BANNER (failed / abandoned payment, 2-min window)
+  ========================================================= */
+  .pay-resume-banner{
+    display:none; align-items:center; gap:10px; background:#FFF3EC; border:1px solid #F6C7B2;
+    border-radius:var(--radius); padding:12px 12px; margin:2px 0 14px;
+  }
+  .pay-resume-banner.show{display:flex; animation:screenIn .25s ease;}
+  .pay-resume-ic{width:32px; height:32px; border-radius:50%; background:#FFE1D1; color:var(--danger); display:flex; align-items:center; justify-content:center; flex-shrink:0;}
+  .pay-resume-text{flex:1; min-width:0;}
+  .pay-resume-title{font-size:12.5px; font-weight:800; color:var(--ink);}
+  .pay-resume-sub{font-size:11px; color:var(--muted); margin-top:1px;}
+  .pay-resume-sub b{color:var(--danger);}
+  .pay-resume-btn{
+    flex-shrink:0; background:var(--ink); color:#fff; border:none; border-radius:var(--radius-sm);
+    font-size:12px; font-weight:800; padding:9px 14px; cursor:pointer;
+  }
+  .success-cta.ghost{background:transparent; color:var(--ink); box-shadow:none; border:1.5px solid var(--line);}
+
+  /* =========================================================
+     LIVE TRACKING SCREEN
+  ========================================================= */
+  .track-map-wrap{position:relative; border-radius:14px; overflow:hidden; height:260px; margin-bottom:14px; border:1px solid var(--line); box-shadow:0 2px 10px rgba(43,36,16,.06);}
+  .track-map{width:100%; height:100%; background:var(--card-hi);}
+  .track-eta-pill{
+    position:absolute; top:12px; left:12px; background:rgba(43,36,16,.88); color:#fff; font-size:12px; font-weight:800;
+    padding:7px 12px; border-radius:20px; z-index:500; backdrop-filter:blur(4px);
+  }
+  .rider-marker{
+    width:34px; height:34px; border-radius:50%; background:var(--green-dim); border:3px solid #fff;
+    box-shadow:0 3px 10px rgba(0,0,0,.3); display:flex; align-items:center; justify-content:center; color:#fff;
+    transition:transform 1s linear;
+  }
+  .rider-marker svg{width:18px; height:18px;}
+  .home-marker{
+    width:26px; height:26px; border-radius:50% 50% 50% 0; background:var(--yellow-deep); border:2px solid #fff;
+    transform:rotate(-45deg); box-shadow:0 2px 6px rgba(0,0,0,.25);
+  }
+  .track-progress{display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:16px; padding:4px 2px;}
+  .track-step{flex:1; text-align:center; position:relative;}
+  .track-step::before{
+    content:''; position:absolute; top:7px; left:-50%; width:100%; height:2px; background:var(--line); z-index:0;
+  }
+  .track-step:first-child::before{display:none;}
+  .track-step-dot{
+    width:16px; height:16px; border-radius:50%; background:#fff; border:2.5px solid var(--line); margin:0 auto 6px;
+    position:relative; z-index:1; transition:background .3s, border-color .3s;
+  }
+  .track-step.done .track-step-dot{background:var(--green-dim); border-color:var(--green-dim);}
+  .track-step.done::before{background:var(--green-dim);}
+  .track-step.active .track-step-dot{background:var(--yellow); border-color:var(--yellow-deep); box-shadow:0 0 0 4px rgba(253,194,2,.25); animation:pulseDot 1.2s ease-in-out infinite;}
+  @keyframes pulseDot{0%,100%{box-shadow:0 0 0 4px rgba(253,194,2,.25);} 50%{box-shadow:0 0 0 8px rgba(253,194,2,.08);}}
+  .track-step-label{font-size:10px; font-weight:700; color:var(--muted); line-height:1.25;}
+  .track-step.done .track-step-label, .track-step.active .track-step-label{color:var(--ink);}
+  .track-rider-card{
+    display:flex; align-items:center; gap:12px; background:var(--card); border:1px solid var(--line);
+    border-radius:var(--radius); padding:13px; box-shadow:0 2px 10px rgba(43,36,16,.05);
+  }
+  .track-rider-avatar{width:42px; height:42px; border-radius:50%; background:var(--green-light); color:var(--green-dim); font-weight:800; display:flex; align-items:center; justify-content:center; flex-shrink:0;}
+  .track-rider-info{flex:1; min-width:0;}
+  .track-rider-name{font-size:13.5px; font-weight:800; color:var(--ink);}
+  .track-rider-sub{font-size:11.5px; color:var(--muted); margin-top:1px;}
+  .track-rider-call{width:40px; height:40px; border-radius:50%; background:var(--green); color:#fff; display:flex; align-items:center; justify-content:center; flex-shrink:0;}
+
+  /* order cards: status variants + actions row */
+  .order-status.pending{background:#FFF3EC; color:var(--danger);}
+  .order-status.active{background:rgba(253,194,2,.18); color:var(--yellow-deep);}
+  .order-actions{display:flex; gap:8px; margin-top:8px;}
+  .order-actions .order-link{border:1px solid var(--line); border-radius:var(--radius-sm); padding:6px 10px;}
+  .order-empty{text-align:center; color:var(--muted); font-size:12.5px; padding:40px 10px;}
+
+  /* =========================================================
+     BILL / INVOICE MODAL
+  ========================================================= */
+  .bill-backdrop{
+    position:fixed; inset:0; background:rgba(20,15,4,.55); z-index:900; display:none;
+    align-items:flex-end; justify-content:center;
+  }
+  .bill-backdrop.show{display:flex; animation:fadeIn .2s ease;}
+  .bill-sheet{width:100%; max-width:420px; max-height:88vh; overflow-y:auto; background:var(--bg); border-radius:18px 18px 0 0; padding:16px 16px 22px; position:relative; animation:sheetUp .25s ease;}
+  @keyframes sheetUp{from{transform:translateY(30px); opacity:.4;} to{transform:translateY(0); opacity:1;}}
+  .bill-close{position:absolute; top:14px; right:14px; z-index:2; width:30px; height:30px; border-radius:50%; background:#fff; border:1px solid var(--line); display:flex; align-items:center; justify-content:center; cursor:pointer;}
+  .bill-paper{
+    background:#fff; border-radius:10px; padding:22px 18px; position:relative; overflow:hidden;
+    box-shadow:0 4px 20px rgba(43,36,16,.10); border:1px solid var(--line);
+  }
+  .bill-stamp{
+    position:absolute; top:56px; right:8px; border:3px solid var(--green-dim); color:var(--green-dim);
+    font-size:20px; font-weight:900; letter-spacing:2px; padding:6px 14px; border-radius:8px;
+    transform:rotate(-18deg); opacity:.75; text-transform:uppercase;
+  }
+  .bill-stamp.failed{border-color:var(--danger); color:var(--danger);}
+  .bill-head{text-align:center; margin-bottom:14px;}
+  .bill-logo{width:36px; height:36px; border-radius:8px; object-fit:cover; margin-bottom:6px;}
+  .bill-brand{font-size:16px; font-weight:800; color:var(--ink);}
+  .bill-brand-sub{font-size:10.5px; color:var(--muted); margin-top:2px;}
+  .bill-meta{display:grid; grid-template-columns:1fr 1fr; gap:8px 10px; font-size:11px; margin-bottom:10px;}
+  .bill-meta div{display:flex; flex-direction:column; gap:2px;}
+  .bill-meta span{color:var(--muted);}
+  .bill-meta b{color:var(--ink); font-size:12px;}
+  .bill-divider{border-top:1px dashed var(--line); margin:12px 0;}
+  .bill-table{width:100%; border-collapse:collapse; font-size:12px;}
+  .bill-table th{text-align:left; color:var(--muted); font-weight:700; font-size:10.5px; padding-bottom:6px; text-transform:uppercase;}
+  .bill-table td{padding:5px 0; color:var(--ink);}
+  .bill-table th:last-child, .bill-table td:last-child{text-align:right;}
+  .bill-table th:nth-child(2), .bill-table td:nth-child(2){text-align:center;}
+  .bill-totals div{display:flex; justify-content:space-between; font-size:12.5px; color:var(--muted); margin-bottom:5px;}
+  .bill-totals b{color:var(--ink);}
+  .bill-grand{font-size:14.5px !important; margin-top:6px; padding-top:8px; border-top:1px solid var(--line);}
+  .bill-grand b{color:var(--green-dim); font-weight:900;}
+  .bill-foot{text-align:center; font-size:10px; color:var(--muted); margin-top:16px; line-height:1.4;}
+  .bill-print-btn{
+    width:100%; margin-top:14px; background:var(--yellow); border:none; border-radius:var(--radius);
+    padding:13px; font-weight:800; font-size:13.5px; color:#231C08; cursor:pointer;
+  }
+  @media print{
+    body > *:not(.bill-backdrop){display:none !important;}
+    .bill-backdrop{position:static; background:none; display:block !important;}
+    .bill-close, .bill-print-btn{display:none !important;}
+    .bill-sheet{max-height:none; box-shadow:none;}
+  }
+
+  /* saved-address card: delete icon */
+  .det-addr-delete{
+    flex-shrink:0; width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+    color:var(--danger); background:transparent; margin-left:2px;
+  }
+  .det-addr-delete:active{background:#FFE1D1;}
+
+  /* =========================================================
+     HELP & SUPPORT (Orders screen)
+  ========================================================= */
+  .help-support-card{
+    background:var(--card); border:1px solid var(--line); border-radius:var(--radius);
+    padding:16px; margin-top:6px; box-shadow:0 2px 10px rgba(43,36,16,.05);
+  }
+  .help-sub{font-size:12px; color:var(--muted); margin-bottom:14px; line-height:1.45;}
+  .help-actions{display:flex; flex-direction:column; gap:9px;}
+  .help-btn{
+    display:flex; align-items:center; gap:10px; padding:12px 14px; border-radius:var(--radius-sm);
+    font-size:13.5px; font-weight:700; border:1.5px solid var(--line); color:var(--ink);
+  }
+  .help-btn.whatsapp{background:#E7F8EE; border-color:#BFE9CE; color:#1F7A43;}
+  .help-btn.email{background:var(--card-hi); border-color:var(--line); color:var(--ink);}
+  .help-btn.call{background:#FFF3EC; border-color:#F6C7B2; color:#C4512D;}
+  .help-btn:active{transform:scale(.98);}
+  .help-hours{text-align:center; font-size:10.5px; color:var(--muted); margin-top:12px;}
