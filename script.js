@@ -1,4 +1,4 @@
-  // ---- App state ----
+// ---- App state ----
   const cart = {}; // name -> {name, price, qty}
 
   // ---- Auth/session state (hoisted so nav/checkout gating can use it) ----
@@ -504,6 +504,11 @@
     payNowBtn.textContent = 'Processing...';
     payNowBtn.disabled = true;
 
+    // Start (or resume) a pending-payment record so a back/cancel mid-flow
+    // can be detected and offered a 2-minute resume window. See the
+    // PAYMENT RESUME + HISTORY module near the end of this file.
+    const pending = startPendingPayment(method);
+
     // Real integration (once backend order-create endpoint exists):
     //   1. POST /api/payments/create-order { amount, currency:'INR' } -> { orderId }
     //   2. Open Razorpay checkout with that orderId
@@ -518,13 +523,16 @@
         description: 'Order payment',
         theme: { color: '#FDC202' },
         handler: function(response){
-          placeOrder(method, response.razorpay_payment_id);
+          placeOrder(method, response.razorpay_payment_id, pending);
         },
         modal: {
           ondismiss: function(){
             payNowBtn.textContent = 'Pay & Place Order';
             payNowBtn.disabled = false;
             showToast('Payment cancelled');
+            // User dismissed the gateway before completing -> failed attempt,
+            // eligible for the 2-minute resume banner.
+            failPendingPayment(pending, 'cancelled');
           }
         }
       });
@@ -534,11 +542,11 @@
 
     // Simulated gateway flow (used until Razorpay script + real key are wired in)
     setTimeout(()=>{
-      placeOrder(method, 'SIMULATED_PAY_' + Date.now());
+      placeOrder(method, 'SIMULATED_PAY_' + Date.now(), pending);
     }, 1100);
   }
 
-  function placeOrder(method, paymentRef){
+  function placeOrder(method, paymentRef, pending){
     payNowBtn.textContent = 'Pay & Place Order';
     payNowBtn.disabled = false;
     document.getElementById('successOverlay').classList.add('show');
@@ -552,9 +560,17 @@
     });
     window.__lastOrderPayload = orderPayload; // inspectable for wiring/testing
 
+    // Mark the pending attempt as paid + push it into payment history
+    // (used by the Orders screen and the bill/invoice view).
+    completePendingPayment(pending || startPendingPayment(method), paymentRef, cart);
+
     // Demo: start the home-topbar ETA countdown as if backend just marked
     // this order "out for delivery" with a 40-minute estimate.
     startDeliveryEta(40);
+
+    // Kick off the live tracking simulation for this order (rider marker,
+    // websocket-style updates, progress steps). See LIVE TRACKING module.
+    beginLiveTracking(40);
 
     Object.keys(cart).forEach(k=>delete cart[k]);
     renderCart();
@@ -565,6 +581,13 @@
     successDoneBtn.addEventListener('click', ()=>{
       document.getElementById('successOverlay').classList.remove('show');
       goToScreen('home');
+    });
+  }
+  const successTrackBtn = document.getElementById('successTrackBtn');
+  if(successTrackBtn){
+    successTrackBtn.addEventListener('click', ()=>{
+      document.getElementById('successOverlay').classList.remove('show');
+      goToScreen('track');
     });
   }
 
@@ -600,21 +623,85 @@
     if(settingsAddr) settingsAddr.textContent = text.replace(/<[^>]+>/g,'');
   }
 
-  async function reverseGeocode(lat, lon){
+  // Compass direction from the delivery pin to a nearby reference point
+  // (used to phrase things like "near Metro Station, North"). We use the
+  // first result returned for a small POI/landmark search around the pin.
+  function bearingLabel(fromLat, fromLng, toLat, toLng){
+    const toRad = d => d * Math.PI / 180;
+    const dLng = toRad(toLng - fromLng);
+    const y = Math.sin(dLng) * Math.cos(toRad(toLat));
+    const x = Math.cos(toRad(fromLat)) * Math.sin(toRad(toLat)) -
+              Math.sin(toRad(fromLat)) * Math.cos(toRad(toLat)) * Math.cos(dLng);
+    const brng = (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+    const dirs = ['North','North-East','East','South-East','South','South-West','West','North-West'];
+    return dirs[Math.round(brng / 45) % 8];
+  }
+
+  // Full structured reverse-geocode: house/building number, road, colony
+  // (neighbourhood/suburb), area, city, state and pincode — plus, when a
+  // nearby named landmark is available, the compass direction to it
+  // ("North of Metro Station") so the address reads the way a courier
+  // would actually recognise it, not just a generic locality name.
+  async function reverseGeocodeDetailed(lat, lon){
+    const fallback = {
+      houseNumber: '', road: '', colony: 'Kondapur', area: 'Kondapur',
+      city: 'Hyderabad', state: 'Telangana', pincode: '', landmarkDir: '',
+      full: 'Kondapur, Hyderabad, Telangana'
+    };
     try{
-      const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&zoom=16&addressdetails=1`, {
+      const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1`, {
         headers: { 'Accept': 'application/json' }
       });
       if(!res.ok) throw new Error('reverse geocode failed');
       const data = await res.json();
       const a = data.address || {};
-      const area = a.suburb || a.neighbourhood || a.residential || a.city_district || a.village || 'Kondapur';
-      const city = a.city || a.town || a.state_district || 'Hyderabad';
-      return `Current &middot; ${area}, ${city}`;
+
+      const houseNumber = a.house_number || '';
+      const road = a.road || a.pedestrian || a.residential || '';
+      // "Colony" in Indian addressing usually maps to neighbourhood/quarter;
+      // suburb/city_district is the wider "area".
+      const colony = a.neighbourhood || a.quarter || a.residential || a.suburb || '';
+      const area = a.suburb || a.city_district || a.county || colony || 'Kondapur';
+      const city = a.city || a.town || a.municipality || a.state_district || 'Hyderabad';
+      const state = a.state || 'Telangana';
+      const pincode = a.postcode || '';
+
+      // Best-effort nearby landmark + direction, so an address like
+      // "North of Cyber Towers" is possible. Failure here just omits it.
+      let landmarkDir = '';
+      try{
+        const poiRes = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&lat=${lat}&lon=${lon}&radius=300&q=landmark`, {
+          headers: { 'Accept': 'application/json' }
+        });
+        if(poiRes.ok){
+          const poiData = await poiRes.json();
+          if(poiData && poiData[0] && poiData[0].display_name){
+            const poiName = poiData[0].display_name.split(',')[0];
+            const dir = bearingLabel(lat, lon, +poiData[0].lat, +poiData[0].lon);
+            landmarkDir = `${dir} of ${poiName}`;
+          }
+        }
+      }catch(e){ /* landmark lookup is best-effort, safe to skip */ }
+
+      const fullParts = [
+        houseNumber && road ? `${houseNumber}, ${road}` : (road || houseNumber),
+        colony,
+        area !== colony ? area : '',
+        city, state, pincode
+      ].filter(Boolean);
+
+      return {
+        houseNumber, road, colony: colony || area, area, city, state, pincode, landmarkDir,
+        full: fullParts.join(', ') || data.display_name || fallback.full
+      };
     } catch(err){
-      // fallback: Hyderabad - Kondapur default if geocoding unavailable
-      return 'Current &middot; Kondapur, Hyderabad';
+      return fallback;
     }
+  }
+
+  async function reverseGeocode(lat, lon){
+    const d = await reverseGeocodeDetailed(lat, lon);
+    return `Current &middot; ${d.colony || d.area}, ${d.city}`;
   }
 
   if(useLocBtn){
@@ -663,7 +750,29 @@
      required here, uses a simple in-page state object) so backend wiring
      later just needs to POST this object on order creation.
   ========================================================= */
-  const savedAddresses = [];
+  // Saved addresses persist in localStorage so a created address stays
+  // selected/available across reloads and app restarts until the user
+  // deletes it themselves (see the delete button in renderSavedAddrList).
+  const SAVED_ADDR_KEY = 'pd_saved_addresses';
+  const SELECTED_ADDR_KEY = 'pd_selected_address_id';
+
+  function loadSavedAddresses(){
+    try{
+      const raw = localStorage.getItem(SAVED_ADDR_KEY);
+      return raw ? JSON.parse(raw) : [];
+    }catch(e){ return []; }
+  }
+  function persistSavedAddresses(){
+    try{ localStorage.setItem(SAVED_ADDR_KEY, JSON.stringify(savedAddresses)); }catch(e){}
+  }
+  function persistSelectedAddress(id){
+    try{
+      if(id) localStorage.setItem(SELECTED_ADDR_KEY, id);
+      else localStorage.removeItem(SELECTED_ADDR_KEY);
+    }catch(e){}
+  }
+
+  const savedAddresses = loadSavedAddresses();
   let pendingCartHasPlan = false; // set true when a subscription/plan item is in cart
 
   const orderDetails = {
@@ -674,6 +783,18 @@
     deliveryTime: '07:00',
     skipTomorrow: false
   };
+
+  // Restore the last-used address selection (and its display text) so the
+  // delivery address stays the same on reopen, exactly as it was left.
+  (function restoreSelectedAddress(){
+    let savedId = null;
+    try{ savedId = localStorage.getItem(SELECTED_ADDR_KEY); }catch(e){}
+    const match = savedAddresses.find(a => a.id === savedId) || savedAddresses[0];
+    if(match){
+      orderDetails.addressId = match.id;
+      setDeliveryAddress(`${match.label} &middot; ${match.full}`);
+    }
+  })();
 
   function renderSavedAddrList(){
     const list = document.getElementById('savedAddrList');
@@ -690,11 +811,34 @@
           <div class="det-addr-full">${addr.full}</div>
         </div>
         <div class="det-addr-radio"></div>
+        <div class="det-addr-delete" title="Remove this address">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6"/></svg>
+        </div>
       `;
-      card.addEventListener('click', ()=>{
+      card.addEventListener('click', (e)=>{
+        if(e.target.closest('.det-addr-delete')) return; // handled separately below
         orderDetails.addressId = addr.id;
+        persistSelectedAddress(addr.id);
+        setDeliveryAddress(`${addr.label} &middot; ${addr.full}`);
         renderSavedAddrList();
         updateAfterAddrVisibility();
+      });
+      card.querySelector('.det-addr-delete').addEventListener('click', (e)=>{
+        e.stopPropagation();
+        // Address only ever disappears when the user explicitly removes it here.
+        const idx = savedAddresses.findIndex(a => a.id === addr.id);
+        if(idx > -1) savedAddresses.splice(idx, 1);
+        persistSavedAddresses();
+        if(orderDetails.addressId === addr.id){
+          orderDetails.addressId = savedAddresses.length ? savedAddresses[0].id : null;
+          persistSelectedAddress(orderDetails.addressId);
+          if(savedAddresses.length){
+            setDeliveryAddress(`${savedAddresses[0].label} &middot; ${savedAddresses[0].full}`);
+          }
+        }
+        renderSavedAddrList();
+        updateAfterAddrVisibility();
+        showToast('Address removed');
       });
       list.appendChild(card);
     });
@@ -791,20 +935,30 @@
       full
     ].filter(Boolean).join(', ');
 
-    const id = 'addr' + (savedAddresses.length + 1);
+    const id = 'addr' + Date.now();
+    const geo = pendingAddrCoords.geo || {};
     savedAddresses.push({
       id, label, full: fullDisplay,
       building, floor, room,
       lat: pendingAddrCoords.lat,
       lng: pendingAddrCoords.lng,
       accuracy: pendingAddrCoords.accuracy,
-      radius: pendingAddrCoords.radius
+      radius: pendingAddrCoords.radius,
+      // Structured breakdown from reverse geocoding, kept alongside the
+      // address so it can be reused (e.g. shown on the bill) later.
+      houseNumber: building || geo.houseNumber || '',
+      road: geo.road || '', colony: geo.colony || '', area: geo.area || '',
+      city: geo.city || '', state: geo.state || '', pincode: geo.pincode || '',
+      landmarkDir: geo.landmarkDir || ''
     });
     orderDetails.addressId = id;
+    persistSavedAddresses();
+    persistSelectedAddress(id);
+    setDeliveryAddress(`${label} &middot; ${fullDisplay}`);
     resetNewAddrForm();
     renderSavedAddrList();
     updateAfterAddrVisibility();
-    showToast('Address saved — now add the rest of the details');
+    showToast('Address saved — it\u2019ll stay set until you remove it');
   });
 
   // "Share live location" inside the details form -> captures exact
@@ -864,12 +1018,22 @@
       const { latitude, longitude, accuracy } = pos.coords;
       pendingAddrCoords = { lat: latitude, lng: longitude, accuracy, radius: ADDRESS_RADIUS_METERS };
 
-      const label = await reverseGeocode(latitude, longitude);
-      document.getElementById('newAddrFull').value = label.replace(/<[^>]+>/g,'').replace('Current · ', '');
+      const d = await reverseGeocodeDetailed(latitude, longitude);
+      pendingAddrCoords.geo = d; // keep the full structured breakdown with the address
+
+      // Pre-fill the exact street/colony/area/city/pincode text; house
+      // number goes into the Building field if one was detected, so the
+      // user only has to confirm/adjust rather than type it all out.
+      document.getElementById('newAddrFull').value = d.full;
+      if(d.houseNumber && !document.getElementById('newAddrBuilding').value){
+        document.getElementById('newAddrBuilding').value = d.houseNumber;
+      }
       if(!document.getElementById('newAddrLabel').value) document.getElementById('newAddrLabel').value = 'Current location';
 
       detGeoStatus.style.display = 'flex';
-      detGeoStatus.innerHTML = `<span class="geo-dot"></span> Live location captured (±${Math.round(accuracy)}m GPS accuracy) &middot; ${ADDRESS_RADIUS_METERS}m delivery radius shown below`;
+      const dirNote = d.landmarkDir ? ` &middot; ${d.landmarkDir}` : '';
+      const pinNote = d.pincode ? ` &middot; PIN ${d.pincode}` : '';
+      detGeoStatus.innerHTML = `<span class="geo-dot"></span> Live location captured (\u00b1${Math.round(accuracy)}m GPS accuracy)${dirNote}${pinNote} &middot; ${ADDRESS_RADIUS_METERS}m delivery radius shown below`;
       renderGeoMap(latitude, longitude);
 
       detUseLocBtn.classList.remove('loading');
@@ -932,7 +1096,10 @@
     orderDetails.note = note;
 
     const selectedAddr = savedAddresses.find(a => a.id === orderDetails.addressId);
-    if(selectedAddr) setDeliveryAddress(`${selectedAddr.label} &middot; ${selectedAddr.full}`);
+    if(selectedAddr){
+      setDeliveryAddress(`${selectedAddr.label} &middot; ${selectedAddr.full}`);
+      persistSelectedAddress(selectedAddr.id);
+    }
 
     // orderDetails is now the single object to send to the backend with the order:
     // { addressId, phone, altPhone, note, deliveryTime, skipTomorrow }
@@ -1813,3 +1980,391 @@
       }
     });
   })();
+
+  /* =========================================================================
+     PAYMENT RESUME + HISTORY MODULE
+     -------------------------------------------------------------------------
+     Tracks each payment attempt through localStorage so that:
+       - if the user backs out / the gateway is dismissed mid-payment, the
+         order isn't lost — a "Resume" banner appears on the payment screen
+         for a 2-minute window, after which the attempt expires.
+       - every completed payment is recorded in `paymentHistory` and shown
+         on the Orders screen with a "View Bill" button (real invoice-style
+         bill with a PAID stamp).
+     Real backend swap-in points are called out in comments below.
+  ========================================================================= */
+  const PENDING_PAYMENT_KEY = 'pd_pending_payment';
+  const PAYMENT_HISTORY_KEY = 'pd_payment_history';
+  const RESUME_WINDOW_MS = 2 * 60 * 1000; // 2 minutes
+
+  function loadPendingPayment(){
+    try{
+      const raw = localStorage.getItem(PENDING_PAYMENT_KEY);
+      return raw ? JSON.parse(raw) : null;
+    }catch(e){ return null; }
+  }
+  function savePendingPayment(p){
+    try{ localStorage.setItem(PENDING_PAYMENT_KEY, JSON.stringify(p)); }catch(e){}
+  }
+  function clearPendingPayment(){
+    try{ localStorage.removeItem(PENDING_PAYMENT_KEY); }catch(e){}
+  }
+
+  function loadPaymentHistory(){
+    try{
+      const raw = localStorage.getItem(PAYMENT_HISTORY_KEY);
+      return raw ? JSON.parse(raw) : null;
+    }catch(e){ return null; }
+  }
+  function savePaymentHistory(list){
+    try{ localStorage.setItem(PAYMENT_HISTORY_KEY, JSON.stringify(list)); }catch(e){}
+  }
+
+  let paymentHistory = loadPaymentHistory();
+  if(!paymentHistory){
+    // Seed with the two orders that used to be hardcoded in the markup,
+    // so the Orders screen isn't empty on first run.
+    paymentHistory = [
+      {
+        id: 'PD-2381', date: '27 Aug, 6:42 AM', status: 'paid',
+        items: [{ name:'1L Toned Milk', qty:30, price:60 }, { name:'Fresh Paneer', qty:2, price:56.5 }],
+        total: 1913, method: 'upi', paymentRef: 'DEMO_SEED_1', active: false
+      },
+      {
+        id: 'PD-2352', date: '20 Aug, 6:38 AM', status: 'paid',
+        items: [{ name:'Family Pack subscription', qty:1, price:899 }],
+        total: 899, method: 'upi', paymentRef: 'DEMO_SEED_2', active: false
+      }
+    ];
+    savePaymentHistory(paymentHistory);
+  }
+
+  function nextOrderId(){
+    return 'PD-' + Math.floor(1000 + Math.random() * 9000);
+  }
+
+  // Starts (or reuses, if the previous one hasn't expired) a pending
+  // payment attempt tied to the current cart total.
+  function startPendingPayment(method){
+    const existing = loadPendingPayment();
+    if(existing && existing.status === 'pending' && (Date.now() - existing.startedAt) < RESUME_WINDOW_MS){
+      return existing;
+    }
+    const pending = {
+      orderId: nextOrderId(),
+      startedAt: Date.now(),
+      method: method,
+      amount: getOrderTotalPaise() / 100,
+      items: cartSnapshot(),
+      status: 'pending'
+    };
+    savePendingPayment(pending);
+    return pending;
+  }
+
+  function cartSnapshot(){
+    return Object.keys(cart).map(k => ({ name: cart[k].name, qty: cart[k].qty, price: cart[k].price }));
+  }
+
+  function failPendingPayment(pending, reason){
+    if(!pending) return;
+    pending.status = 'failed';
+    pending.failedAt = Date.now();
+    pending.failReason = reason || 'unknown';
+    savePendingPayment(pending);
+    // Also drop a "failed" line into history so it's visible if the user
+    // never comes back to resume it (shows as a non-paid order card).
+    renderPayResumeBanner();
+  }
+
+  function completePendingPayment(pending, paymentRef, cartAtCompletion){
+    const items = (cartAtCompletion ? Object.keys(cartAtCompletion).map(k => ({
+      name: cartAtCompletion[k].name, qty: cartAtCompletion[k].qty, price: cartAtCompletion[k].price
+    })) : (pending && pending.items) || []);
+    const total = items.reduce((s, it) => s + it.price * it.qty, 0);
+    const entry = {
+      id: (pending && pending.orderId) || nextOrderId(),
+      date: formatOrderDate(new Date()),
+      status: 'paid',
+      items: items,
+      total: total || (pending ? pending.amount : 0),
+      method: (pending && pending.method) || 'upi',
+      paymentRef: paymentRef || null,
+      active: true // just placed -> shows a live "Track" action
+    };
+    paymentHistory.unshift(entry);
+    savePaymentHistory(paymentHistory);
+    clearPendingPayment();
+    renderPayResumeBanner();
+    renderOrderHistory();
+    window.__lastCompletedOrder = entry;
+    return entry;
+  }
+
+  function formatOrderDate(d){
+    return d.toLocaleDateString('en-IN', { day:'2-digit', month:'short' }) + ', ' +
+           d.toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit', hour12:true });
+  }
+
+  /* ---------- Resume banner + 2-minute countdown ---------- */
+  let resumeTimerId = null;
+
+  function renderPayResumeBanner(){
+    const banner = document.getElementById('payResumeBanner');
+    if(!banner) return;
+    const pending = loadPendingPayment();
+    clearInterval(resumeTimerId);
+
+    if(!pending || pending.status !== 'pending' && pending.status !== 'failed'){
+      banner.classList.remove('show');
+      return;
+    }
+    const elapsed = Date.now() - (pending.failedAt || pending.startedAt);
+    if(elapsed >= RESUME_WINDOW_MS){
+      // Window expired — silently clear, no banner.
+      clearPendingPayment();
+      banner.classList.remove('show');
+      return;
+    }
+
+    banner.classList.add('show');
+    document.getElementById('payResumeTitle').textContent =
+      pending.status === 'failed' ? 'Payment failed' : 'Payment incomplete';
+
+    const timerEl = document.getElementById('payResumeTimer');
+    function tick(){
+      const msLeft = RESUME_WINDOW_MS - (Date.now() - (pending.failedAt || pending.startedAt));
+      if(msLeft <= 0){
+        clearInterval(resumeTimerId);
+        clearPendingPayment();
+        banner.classList.remove('show');
+        return;
+      }
+      const s = Math.ceil(msLeft / 1000);
+      timerEl.textContent = Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+    }
+    tick();
+    resumeTimerId = setInterval(tick, 1000);
+  }
+
+  const payResumeBtn = document.getElementById('payResumeBtn');
+  if(payResumeBtn){
+    payResumeBtn.addEventListener('click', ()=>{
+      const pending = loadPendingPayment();
+      if(!pending) return;
+      // Re-select the method they were using and retry the gateway directly
+      // (skips straight back into payment rather than making them redo cart/details).
+      document.querySelectorAll('.pay-method').forEach(pm=>{
+        pm.classList.toggle('selected', pm.dataset.method === pending.method);
+      });
+      pending.status = 'pending';
+      pending.startedAt = pending.startedAt; // keep original start so window doesn't reset
+      savePendingPayment(pending);
+      launchPaymentGateway(pending.method);
+    });
+  }
+
+  // Re-check the resume banner whenever the payment screen becomes active
+  // (covers the "went back mid-payment, reopened the app/screen" case).
+  document.querySelectorAll('[data-goto="payment"], .nav-item[data-screen="payment"]').forEach(el=>{
+    el.addEventListener('click', renderPayResumeBanner);
+  });
+  const paymentScreenEl = document.getElementById('screen-payment');
+  if(paymentScreenEl){
+    const mo = new MutationObserver(()=>{
+      if(paymentScreenEl.classList.contains('active')) renderPayResumeBanner();
+    });
+    mo.observe(paymentScreenEl, { attributes:true, attributeFilter:['class'] });
+  }
+  renderPayResumeBanner(); // in case a pending attempt survived a page reload
+
+  /* ---------- Orders screen: render from paymentHistory ---------- */
+  function renderOrderHistory(){
+    const list = document.getElementById('ordersList');
+    if(!list) return;
+    if(paymentHistory.length === 0){
+      list.innerHTML = '<div class="order-empty">No orders yet — your paid orders and bills will show up here.</div>';
+      return;
+    }
+    list.innerHTML = paymentHistory.map((o, idx)=>{
+      const itemsText = o.items.map(it => it.name + (it.qty > 1 ? ' \u00d7 ' + it.qty : '')).join(', ');
+      const statusClass = o.status === 'paid' ? (o.active ? 'active' : 'done') : 'pending';
+      const statusLabel = o.status === 'paid' ? (o.active ? 'Out for delivery' : 'Delivered') : 'Failed';
+      const actions = [];
+      if(o.active) actions.push('<span class="order-link" data-track-idx="' + idx + '">Track live</span>');
+      if(o.status === 'paid') actions.push('<span class="order-link" data-bill-idx="' + idx + '">View Bill</span>');
+      return (
+        '<div class="order-card">' +
+          '<div class="order-top"><div>' +
+            '<div class="order-id">#' + o.id + '</div>' +
+            '<div class="order-date">' + statusLabel + ' &middot; ' + o.date + '</div>' +
+          '</div><div class="order-status ' + statusClass + '">' + statusLabel + '</div></div>' +
+          '<div class="order-items">' + itemsText + '</div>' +
+          '<div class="order-bottom"><b>\u20b9' + Math.round(o.total).toLocaleString('en-IN') + '</b></div>' +
+          (actions.length ? '<div class="order-actions">' + actions.join('') + '</div>' : '') +
+        '</div>'
+      );
+    }).join('');
+
+    list.querySelectorAll('[data-bill-idx]').forEach(el=>{
+      el.addEventListener('click', ()=> openBill(paymentHistory[+el.dataset.billIdx]));
+    });
+    list.querySelectorAll('[data-track-idx]').forEach(el=>{
+      el.addEventListener('click', ()=> goToScreen('track'));
+    });
+  }
+  renderOrderHistory();
+
+  /* ---------- Bill / invoice modal ---------- */
+  function openBill(order){
+    if(!order) return;
+    document.getElementById('billInvoiceId').textContent = order.id;
+    document.getElementById('billDate').textContent = order.date;
+    document.getElementById('billMethod').textContent = (order.method || 'upi').toUpperCase();
+    document.getElementById('billRef').textContent = order.paymentRef || '\u2014';
+
+    const stampEl = document.getElementById('billStamp');
+    stampEl.textContent = order.status === 'paid' ? 'PAID' : 'FAILED';
+    stampEl.classList.toggle('failed', order.status !== 'paid');
+
+    document.getElementById('billTableBody').innerHTML = order.items.map(it =>
+      '<tr><td>' + it.name + '</td><td>' + it.qty + '</td><td>\u20b9' + Math.round(it.price * it.qty).toLocaleString('en-IN') + '</td></tr>'
+    ).join('');
+    document.getElementById('billSubtotal').textContent = '\u20b9' + Math.round(order.total).toLocaleString('en-IN');
+    document.getElementById('billGrandTotal').textContent = '\u20b9' + Math.round(order.total).toLocaleString('en-IN');
+
+    document.getElementById('billBackdrop').classList.add('show');
+  }
+  const billCloseBtn = document.getElementById('billCloseBtn');
+  const billBackdrop = document.getElementById('billBackdrop');
+  if(billCloseBtn) billCloseBtn.addEventListener('click', ()=> billBackdrop.classList.remove('show'));
+  if(billBackdrop) billBackdrop.addEventListener('click', (e)=>{ if(e.target === billBackdrop) billBackdrop.classList.remove('show'); });
+  const billPrintBtn = document.getElementById('billPrintBtn');
+  if(billPrintBtn) billPrintBtn.addEventListener('click', ()=> window.print());
+
+  /* =========================================================================
+     LIVE TRACKING MODULE
+     -------------------------------------------------------------------------
+     Drives the delivery-boy marker on the track screen. Structured as a tiny
+     pub/sub "fakeSocket" so swapping in a real socket.io connection later is
+     a small, contained change — replace `fakeSocket` with:
+
+       const socket = io('https://your-backend');
+       socket.on('deliveryBoy:location', ({lat,lng}) => liveTracking.onLocation(lat,lng));
+       socket.on('order:status', ({step}) => liveTracking.onStatus(step));
+
+     and remove the `startSimulatedFeed()` call below. The rider-side app
+     would emit with:
+       socket.emit('deliveryBoy:location', { orderId, lat, lng });
+     (see startForegroundLocationTracking() above, which already prepares
+     that payload on the rider's device.)
+  ========================================================================= */
+  const fakeSocket = (function(){
+    const handlers = {};
+    return {
+      on(evt, fn){ (handlers[evt] = handlers[evt] || []).push(fn); },
+      emit(evt, payload){ (handlers[evt] || []).forEach(fn => fn(payload)); }
+    };
+  })();
+
+  let trackMap = null, riderMarker = null, homeMarker = null, riderIcon = null, homeIcon = null;
+  let trackFeedTimer = null, trackRouteIdx = 0, trackRoute = [];
+
+  function initTrackMap(startLatLng, endLatLng){
+    const el = document.getElementById('trackMap');
+    if(!el || typeof L === 'undefined') return;
+
+    if(!trackMap){
+      trackMap = L.map(el, { zoomControl:false, attributionControl:false });
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:19 }).addTo(trackMap);
+
+      riderIcon = L.divIcon({ className:'', html:'<div class="rider-marker"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="18.5" cy="17.5" r="3.5"/><path d="M15 6a1 1 0 0 0-1-1h-3l3.5 4.5H15"/><path d="M9 17.5V14l-3-3 4-3 2 3h3"/></svg></div>', iconSize:[34,34], iconAnchor:[17,17] });
+      homeIcon = L.divIcon({ className:'', html:'<div class="home-marker"></div>', iconSize:[26,26], iconAnchor:[13,24] });
+
+      homeMarker = L.marker(endLatLng, { icon: homeIcon }).addTo(trackMap);
+      riderMarker = L.marker(startLatLng, { icon: riderIcon }).addTo(trackMap);
+    } else {
+      homeMarker.setLatLng(endLatLng);
+      riderMarker.setLatLng(startLatLng);
+    }
+    trackMap.fitBounds(L.latLngBounds([startLatLng, endLatLng]), { padding:[36,36] });
+    setTimeout(()=> trackMap.invalidateSize(), 200);
+  }
+
+  // Builds a slightly-wiggly path of intermediate points between two
+  // coordinates so the rider marker doesn't move in a perfectly straight
+  // (unrealistic) line. Swap for a real routing API (OSRM/Google Directions)
+  // once one is wired up server-side.
+  function buildRoute(start, end, steps){
+    const pts = [];
+    for(let i = 0; i <= steps; i++){
+      const t = i / steps;
+      const lat = start[0] + (end[0] - start[0]) * t;
+      const lng = start[1] + (end[1] - start[1]) * t;
+      const wiggle = Math.sin(t * Math.PI * 3) * 0.0009 * (1 - t);
+      pts.push([lat + wiggle, lng - wiggle]);
+    }
+    return pts;
+  }
+
+  function haversineKm(a, b){
+    const R = 6371, toRad = d => d * Math.PI / 180;
+    const dLat = toRad(b[0]-a[0]), dLng = toRad(b[1]-a[1]);
+    const s = Math.sin(dLat/2)**2 + Math.cos(toRad(a[0]))*Math.cos(toRad(b[0]))*Math.sin(dLng/2)**2;
+    return R * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1-s));
+  }
+
+  const trackSteps = ['placed', 'preparing', 'out', 'delivered'];
+  function setTrackStep(step){
+    document.querySelectorAll('.track-step').forEach(el=>{
+      const i = trackSteps.indexOf(el.dataset.step);
+      const cur = trackSteps.indexOf(step);
+      el.classList.toggle('done', i < cur);
+      el.classList.toggle('active', i === cur);
+    });
+  }
+
+  fakeSocket.on('deliveryBoy:location', ({ lat, lng, destination }) => {
+    if(!riderMarker) return;
+    riderMarker.setLatLng([lat, lng]);
+    const distKm = haversineKm([lat, lng], destination);
+    const distEl = document.getElementById('trackDist');
+    if(distEl) distEl.textContent = distKm.toFixed(1) + ' km';
+  });
+  fakeSocket.on('order:status', ({ step, etaMinutes }) => {
+    setTrackStep(step);
+    const pill = document.getElementById('trackEtaPill');
+    if(pill) pill.textContent = step === 'delivered' ? 'Delivered' : etaMinutes + ' min away';
+  });
+
+  function beginLiveTracking(totalEtaMinutes){
+    clearInterval(trackFeedTimer);
+    // Demo coordinates: rider starts ~2.5km from the (demo) delivery address.
+    const end = [19.0760, 72.8777];
+    const start = [19.0980, 72.9010];
+    trackRoute = buildRoute(start, end, 240); // 240 ticks across the whole ETA
+    trackRouteIdx = 0;
+
+    initTrackMap(start, end);
+    setTrackStep('placed');
+    setTimeout(()=> setTrackStep('preparing'), 1500);
+    setTimeout(()=> fakeSocket.emit('order:status', { step:'out', etaMinutes: totalEtaMinutes }), 4000);
+
+    const tickMs = Math.max(600, (totalEtaMinutes * 60000) / trackRoute.length);
+    trackFeedTimer = setInterval(()=>{
+      if(trackRouteIdx >= trackRoute.length){
+        clearInterval(trackFeedTimer);
+        fakeSocket.emit('order:status', { step:'delivered', etaMinutes:0 });
+        return;
+      }
+      const [lat, lng] = trackRoute[trackRouteIdx];
+      // Real integration: this whole block is replaced by the socket.io
+      // 'deliveryBoy:location' listener registered above.
+      fakeSocket.emit('deliveryBoy:location', { lat, lng, destination: end });
+      const minsLeft = Math.max(1, Math.round(totalEtaMinutes * (1 - trackRouteIdx / trackRoute.length)));
+      const pill = document.getElementById('trackEtaPill');
+      if(pill) pill.textContent = minsLeft + ' min away';
+      trackRouteIdx++;
+    }, tickMs);
+  }
+  window.beginLiveTracking = beginLiveTracking; // callable once a real order:outForDelivery event fires
