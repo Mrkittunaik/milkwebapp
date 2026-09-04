@@ -576,6 +576,20 @@
       </div>
     </div>
 
+    <!-- RESUME BANNER: shown when a previous payment attempt failed/was
+         abandoned (user hit back mid-payment) and is still within the
+         2-minute resume window. -->
+    <div class="pay-resume-banner" id="payResumeBanner">
+      <div class="pay-resume-ic">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
+      </div>
+      <div class="pay-resume-text">
+        <div class="pay-resume-title" id="payResumeTitle">Payment incomplete</div>
+        <div class="pay-resume-sub">Your order is saved. Resume within <b id="payResumeTimer">2:00</b> or start over.</div>
+      </div>
+      <button class="pay-resume-btn" id="payResumeBtn">Resume</button>
+    </div>
+
     <button class="pay-cta ripple" id="payNowBtn">Pay &amp; Place Order</button>
 
     <div class="success-overlay" id="successOverlay">
@@ -584,36 +598,119 @@
       </div>
       <div class="success-title">Order placed!</div>
       <div class="success-sub">Your fresh order is confirmed and on its way. Thank you for choosing Pakka Doodhwala.</div>
-      <button class="success-cta" id="successDoneBtn">Back to Home</button>
+      <button class="success-cta" id="successTrackBtn" style="margin-bottom:8px;">Track order live</button>
+      <button class="success-cta ghost" id="successDoneBtn">Back to Home</button>
     </div>
   </div>
 
-  <!-- ORDERS SCREEN -->
+  <!-- ORDERS / PAYMENT HISTORY SCREEN -->
   <div class="screen" id="screen-orders">
     <div class="section-head" style="margin-top:2px;">
       <div class="section-title">Past <span>Orders</span></div>
     </div>
-    <div class="order-card">
-      <div class="order-top">
-        <div>
-          <div class="order-id">#PD-2381</div>
-          <div class="order-date">Delivered &middot; 27 Aug, 6:42 AM</div>
-        </div>
-        <div class="order-status done">Delivered</div>
+    <div id="ordersList"><!-- rendered by renderOrderHistory() from paymentHistory --></div>
+
+    <div class="help-support-card">
+      <div class="section-head" style="margin:22px 0 10px;">
+        <div class="section-title">Help &amp; <span>Support</span></div>
       </div>
-      <div class="order-items">1L Toned Milk &times; 30, Fresh Paneer &times; 2</div>
-      <div class="order-bottom"><b>₹1,913</b><span class="order-link">Reorder</span></div>
+      <div class="help-sub">Order issue, wrong item, missed delivery or anything else — we're here.</div>
+      <div class="help-actions">
+        <a class="help-btn whatsapp" id="helpWhatsappBtn" href="https://wa.me/919999999999?text=Hi%2C%20I%20need%20help%20with%20my%20Pakka%20Doodhwala%20order" target="_blank" rel="noopener">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor"><path d="M17.5 14.4c-.3-.1-1.7-.9-2-1-.3-.1-.5-.1-.7.1-.2.3-.8 1-.9 1.2-.2.2-.3.2-.6.1-.3-.1-1.3-.5-2.4-1.5-.9-.8-1.5-1.8-1.7-2.1-.2-.3 0-.5.1-.6.1-.1.3-.3.4-.5.1-.1.2-.3.3-.4.1-.2 0-.4 0-.5C10 9 9.4 7.6 9.2 7c-.2-.5-.4-.5-.6-.5h-.5c-.2 0-.5.1-.7.3-.3.3-1 1-1 2.4s1 2.8 1.2 3c.1.2 2 3 4.8 4.3.7.3 1.2.5 1.6.6.7.2 1.3.2 1.8.1.5-.1 1.7-.7 1.9-1.4.2-.6.2-1.2.2-1.3-.1-.2-.3-.3-.6-.4Z"/><path d="M12 2a10 10 0 0 0-8.6 15L2 22l5.2-1.4A10 10 0 1 0 12 2Zm0 18.2a8.1 8.1 0 0 1-4.2-1.2l-.3-.2-3.1.8.8-3-.2-.3A8.2 8.2 0 1 1 12 20.2Z"/></svg>
+          <span>WhatsApp us</span>
+        </a>
+        <a class="help-btn email" id="helpEmailBtn" href="mailto:support.pakkadoodhwala@gmail.com?subject=Help%20with%20my%20order">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2.5"/><path d="m2.5 6 9.5 7 9.5-7"/></svg>
+          <span>Email us</span>
+        </a>
+        <a class="help-btn call" id="helpCallBtn" href="tel:+919999999999">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92Z"/></svg>
+          <span>Call +91 99999 99999</span>
+        </a>
+      </div>
+      <div class="help-hours">Support hours: 6:00 AM &ndash; 10:00 PM, every day</div>
     </div>
-    <div class="order-card">
-      <div class="order-top">
-        <div>
-          <div class="order-id">#PD-2352</div>
-          <div class="order-date">Delivered &middot; 20 Aug, 6:38 AM</div>
-        </div>
-        <div class="order-status done">Delivered</div>
+  </div>
+
+  <!-- LIVE TRACKING SCREEN -->
+  <div class="screen" id="screen-track">
+    <div class="screen-header-row" style="margin-top:2px;">
+      <div class="back-btn" data-goto="orders">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
       </div>
-      <div class="order-items">Family Pack subscription</div>
-      <div class="order-bottom"><b>₹899</b><span class="order-link">Reorder</span></div>
+      <div class="section-title" style="margin:0;">Live <span>Tracking</span></div>
+    </div>
+
+    <div class="track-map-wrap">
+      <div id="trackMap" class="track-map"></div>
+      <div class="track-eta-pill" id="trackEtaPill">Calculating&hellip;</div>
+    </div>
+
+    <div class="track-progress" id="trackProgress">
+      <div class="track-step done" data-step="placed">
+        <div class="track-step-dot"></div>
+        <div class="track-step-label">Order<br>placed</div>
+      </div>
+      <div class="track-step" data-step="preparing">
+        <div class="track-step-dot"></div>
+        <div class="track-step-label">Preparing</div>
+      </div>
+      <div class="track-step" data-step="out">
+        <div class="track-step-dot"></div>
+        <div class="track-step-label">Out for<br>delivery</div>
+      </div>
+      <div class="track-step" data-step="delivered">
+        <div class="track-step-dot"></div>
+        <div class="track-step-label">Delivered</div>
+      </div>
+    </div>
+
+    <div class="track-rider-card">
+      <div class="track-rider-avatar">R</div>
+      <div class="track-rider-info">
+        <div class="track-rider-name" id="trackRiderName">Ravi Kumar</div>
+        <div class="track-rider-sub" id="trackRiderSub">Your delivery partner &middot; <span id="trackDist">-- km</span> away</div>
+      </div>
+      <a class="track-rider-call" id="trackCallBtn" href="tel:+919999999999">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92Z"/></svg>
+      </a>
+    </div>
+  </div>
+
+  <!-- BILL / INVOICE MODAL -->
+  <div class="bill-backdrop" id="billBackdrop">
+    <div class="bill-sheet">
+      <div class="bill-close" id="billCloseBtn">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </div>
+      <div class="bill-paper" id="billPaper">
+        <div class="bill-stamp" id="billStamp">PAID</div>
+        <div class="bill-head">
+          <img src="logo.png" class="bill-logo" alt="">
+          <div class="bill-brand">Pakka Doodhwala</div>
+          <div class="bill-brand-sub">Fresh milk, paneer &amp; ghee &middot; delivered daily</div>
+        </div>
+        <div class="bill-meta">
+          <div><span>Invoice #</span><b id="billInvoiceId">--</b></div>
+          <div><span>Date</span><b id="billDate">--</b></div>
+          <div><span>Payment method</span><b id="billMethod">--</b></div>
+          <div><span>Reference</span><b id="billRef">--</b></div>
+        </div>
+        <div class="bill-divider"></div>
+        <table class="bill-table" id="billTable">
+          <thead><tr><th>Item</th><th>Qty</th><th>Amount</th></tr></thead>
+          <tbody id="billTableBody"></tbody>
+        </table>
+        <div class="bill-divider"></div>
+        <div class="bill-totals">
+          <div><span>Item total</span><b id="billSubtotal">₹0</b></div>
+          <div><span>Delivery</span><b>FREE</b></div>
+          <div class="bill-grand"><span>Total paid</span><b id="billGrandTotal">₹0</b></div>
+        </div>
+        <div class="bill-foot">Thank you for choosing Pakka Doodhwala. This is a system-generated bill.</div>
+      </div>
+      <button class="bill-print-btn" id="billPrintBtn">Print / Save as PDF</button>
     </div>
   </div>
 
