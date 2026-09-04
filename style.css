@@ -339,7 +339,13 @@
     background:#fff; border-top:1px solid var(--line);
     display:flex; align-items:center; justify-content:space-around;
     padding-bottom:env(safe-area-inset-bottom); z-index:20;
+    transition:transform .22s ease;
   }
+  /* While a text field is focused (soft keyboard open), the nav is slid
+     fully off-screen instead of being squashed/floated above the keyboard.
+     #app's height shrinks with the keyboard on some browsers (dvh), which
+     otherwise drags this bottom:0 bar up into the middle of the screen. */
+  .bottomnav.kb-hidden{ transform:translateY(120%); }
   .nav-item{display:flex; flex-direction:column; align-items:center; gap:4px; color:var(--muted); cursor:pointer; position:relative;}
   .nav-item.active{color:var(--green-dim);}
   .nav-item span{font-size:10px; font-weight:700;}
@@ -622,11 +628,27 @@
     font-weight:700; margin-bottom:8px; padding:6px 10px; background:var(--green-light); border-radius:var(--radius-sm);
   }
   .det-geo-status .geo-dot{width:6px; height:6px; border-radius:50%; background:var(--green-dim); flex-shrink:0; animation:etaPulse 1.2s infinite ease-in-out;}
-  .det-geo-map{
-    width:100%; height:180px; border-radius:var(--radius-sm); margin-bottom:10px;
+  .det-geo-map-wrap{
+    position:relative; width:100%; height:200px; border-radius:var(--radius-sm); margin-bottom:10px;
     overflow:hidden; border:1.5px solid var(--line);
   }
+  .det-geo-map{ width:100%; height:100%; }
   .det-geo-map .leaflet-control-attribution{font-size:9px;}
+  /* Pin stays visually fixed at the exact center of the card. Its SVG tip
+     (bottom point) is what marks the true lat/lng — translate so the tip,
+     not the whole icon, sits on the center point. */
+  .det-geo-pin{
+    position:absolute; left:50%; top:50%; transform:translate(-50%,-100%);
+    z-index:500; pointer-events:none; transition:transform .15s cubic-bezier(.34,1.56,.64,1);
+    filter:drop-shadow(0 3px 4px rgba(43,36,16,.35));
+  }
+  .det-geo-pin.dragging{ transform:translate(-50%,-118%) scale(1.06); }
+  .det-geo-recenter{
+    position:absolute; right:8px; bottom:8px; width:34px; height:34px; border-radius:50%;
+    background:#fff; border:1.5px solid var(--line); display:flex; align-items:center; justify-content:center;
+    color:var(--green-dim); cursor:pointer; z-index:500; box-shadow:0 2px 6px rgba(43,36,16,.18);
+  }
+  .det-geo-recenter:active{transform:scale(.92);}
   .det-inline-actions{display:flex; gap:8px; margin-top:4px;}
   .det-cancel-btn, .det-save-btn{
     flex:1; padding:10px; border-radius:var(--radius-sm); font-weight:700; font-size:13px; border:none; cursor:pointer;
