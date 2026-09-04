@@ -464,7 +464,21 @@
         <span id="detUseLocBtnText">Share live location</span>
       </button>
       <div class="det-geo-status" id="detGeoStatus" style="display:none;"></div>
-      <div class="det-geo-map" id="detGeoMap" style="display:none;"></div>
+      <div class="det-geo-map-wrap" id="detGeoMapWrap" style="display:none;">
+        <div class="det-geo-map" id="detGeoMap"></div>
+        <!-- Fixed pin overlay: always sits dead-center of the card. The map
+             pans underneath it — dragging the map is how the user adjusts
+             the exact delivery point (same pattern as Swiggy/Zomato/Uber). -->
+        <div class="det-geo-pin" id="detGeoPin" aria-hidden="true">
+          <svg width="30" height="40" viewBox="0 0 30 40" fill="none">
+            <path d="M15 0C6.7 0 0 6.7 0 15c0 10.5 15 25 15 25s15-14.5 15-25C30 6.7 23.3 0 15 0Z" fill="#3C9257"/>
+            <circle cx="15" cy="15" r="6" fill="#fff"/>
+          </svg>
+        </div>
+        <button class="det-geo-recenter" id="detGeoRecenterBtn" type="button" title="Recenter to my GPS location">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
+        </button>
+      </div>
 
       <input class="det-input" id="newAddrLabel" placeholder="Label (Home, Work, Other)">
 
