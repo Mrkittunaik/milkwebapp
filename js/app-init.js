@@ -14,6 +14,7 @@
 import { isLoggedIn, getTokenUserId, usersApi } from './api.js';
 import { connectSocket } from './socket.js';
 import { initProducts, getProductById } from './products.js';
+import { initBanners } from './banners.js';
 import { initNotifications, requestPushPermission } from './notifications.js';
 import { placeRealOrder, startTrackingOrder, stopTrackingOrder, onMyOrdersChanged, fetchMyOrders } from './orders.js';
 import { sendOtp, verifyOtp, completeGoogleLogin, bindPhone, startGoogleSignIn } from './auth.js';
@@ -29,6 +30,9 @@ initProducts({
     if (typeof window.flyToCart === 'function') window.flyToCart(btnEl);
   }
 });
+
+// ---- Home banners: fetch from admin-managed banners, live over sockets ----
+initBanners();
 
 // ---- Auth: expose real calls for script.js's existing button handlers
 // to call instead of the mock timeouts. See index.html/script.js patch
