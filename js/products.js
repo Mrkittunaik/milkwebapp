@@ -51,6 +51,47 @@ function productCardHtml(p) {
     </div>`;
 }
 
+function productRailCardHtml(p) {
+  const discountPct = p.mrp > p.price ? Math.round(((p.mrp - p.price) / p.mrp) * 100) : 0;
+  const thumb = p.images && p.images[0]
+    ? `<img src="${API_BASE}${p.images[0]}" alt="${p.name}" style="width:100%;height:100%;object-fit:cover;border-radius:inherit;">`
+    : (CATEGORY_ICONS[p.category] || CATEGORY_ICONS.milk);
+
+  return `
+    <div class="prod-card" data-id="${p._id}">
+      <div class="prod-thumb">
+        ${discountPct > 0 ? `<span class="disc">-${discountPct}%</span>` : ''}
+        <span class="fav">${FAV_ICON}</span>
+        ${thumb}
+      </div>
+      <div class="prod-body">
+        <div class="prod-name">${p.name}</div>
+        <div class="prod-meta">${p.unit}${p.desc ? ' &middot; ' + p.desc : ''}</div>
+        <div class="prod-bottom">
+          <div class="prod-price">${discountPct > 0 ? `<s>₹${p.mrp}</s>` : ''}₹${p.price}</div>
+          <button class="prod-add" data-id="${p._id}" data-name="${p.name}" data-price="${p.price}">+</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function renderHomeFeaturedRail() {
+  const rail = document.getElementById('homeFeaturedRail');
+  if (!rail) return;
+
+  const featured = allProducts.filter(p => p.featured && p.available && p.stock > 0).slice(0, 8);
+  const toShow = featured.length ? featured : allProducts.filter(p => p.available && p.stock > 0).slice(0, 8);
+  rail.innerHTML = toShow.map(productRailCardHtml).join('');
+
+  rail.querySelectorAll('.prod-add').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const { id, name, price } = btn.dataset;
+      if (typeof onAddToCart === 'function') onAddToCart({ id, name, price: Number(price) }, btn);
+    });
+  });
+}
+
 function renderGrid() {
   const grid = document.getElementById('prodGrid');
   if (!grid) return;
@@ -74,6 +115,7 @@ async function loadProducts() {
   try {
     allProducts = await productsApi.list({ available: true });
     renderGrid();
+    renderHomeFeaturedRail();
   } catch (err) {
     console.error('[products] failed to load:', err.message);
     const grid = document.getElementById('prodGrid');
