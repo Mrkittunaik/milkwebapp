@@ -46,17 +46,21 @@
     try{ localStorage.removeItem(SESSION_STORAGE_KEY); } catch(e){}
   }
 
-  // Real integration point: call this on app load (and periodically, or on
-  // socket event "user:blocked") to check the admin panel's blocked flag —
-  // GET /api/users/:id/status -> { blocked: true/false }. If true, force
-  // the user back to the login gate even though a session was saved.
+  // Checks the admin panel's blocked flag via GET /api/users/:id/status.
+  // Called on app load and can be re-checked on the socket "user:status"
+  // event (see js/notifications.js) to force logout mid-session if an
+  // admin blocks the account while the user is browsing.
   async function checkAccountBlocked(){
     if(!userSession.loggedIn) return false;
-    // Placeholder — wire to real endpoint once backend exists:
-    // const res = await fetch(`/api/users/${userSession.phone}/status`);
-    // const data = await res.json();
-    // return !!data.blocked;
-    return userSession.blocked === true;
+    try{
+      const userId = window.PD_REAL_AUTH ? (window.PD_REAL_AUTH.getTokenUserId && window.PD_REAL_AUTH.getTokenUserId()) : null;
+      if(!userId) return userSession.blocked === true; // no token yet - fall back to last known state
+      const res = await fetch(`${window.PD_API_BASE || ''}/api/users/${userId}/status`);
+      const data = await res.json();
+      return !!data.blocked;
+    } catch(e){
+      return userSession.blocked === true; // network hiccup - don't lock the user out on a fluke
+    }
   }
 
   let pendingAuthAction = null; // fn to run automatically once login succeeds
@@ -205,12 +209,13 @@
     });
   }
 
-  function addToCart(name, price){
-    if(!cart[name]) cart[name] = {name, price, qty:0};
+  function addToCart(name, price, id){
+    if(!cart[name]) cart[name] = {name, price, id: id || null, qty:0};
     cart[name].qty++;
     renderCart();
   }
 
+  window.addToCart = addToCart; // exposed for js/app-init.js's real product "+" buttons
   // ---- Fly-to-cart animation ----
   function flyToCart(sourceEl){
     const cartTarget = document.querySelector('.icon-btn[aria-label="Cart"]');
@@ -242,6 +247,7 @@
       setTimeout(()=> cartTarget.classList.remove('cart-pulse'), 400);
     }, 550);
   }
+  window.flyToCart = flyToCart; // exposed for js/app-init.js's real product "+" buttons
 
   // ---- Wire every "add" button (product + and package subscribe) ----
   document.querySelectorAll('.prod-add').forEach(btn=>{
@@ -586,34 +592,50 @@
     }, 1100);
   }
 
-  function placeOrder(method, paymentRef, pending){
+  async function placeOrder(method, paymentRef, pending){
     payNowBtn.textContent = 'Pay & Place Order';
     payNowBtn.disabled = false;
-    document.getElementById('successOverlay').classList.add('show');
 
-    // Full order payload ready for POST /api/orders once backend exists:
-    // { items: cart, ...orderDetails, paymentMethod: method, paymentRef }
-    const orderPayload = Object.assign({}, orderDetails, {
-      items: cart,
-      paymentMethod: method,
-      paymentRef: paymentRef || null
-    });
-    window.__lastOrderPayload = orderPayload; // inspectable for wiring/testing
+    const selectedAddr = savedAddresses.find(a => a.id === orderDetails.addressId) || savedAddresses[0];
 
-    // Mark the pending attempt as paid + push it into payment history
-    // (used by the Orders screen and the bill/invoice view).
-    completePendingPayment(pending || startPendingPayment(method), paymentRef, cart);
+    try{
+      const order = await window.PD_REAL_ORDERS.placeRealOrder({
+        cart,
+        address: selectedAddr ? selectedAddr.full : '',
+        lat: selectedAddr ? selectedAddr.lat : undefined,
+        lng: selectedAddr ? selectedAddr.lng : undefined,
+        paymentStatus: method === 'cod' ? 'cod' : 'paid',
+        paymentRef: paymentRef || null
+      });
+      window.__lastOrder = order; // real Order document from the backend
 
-    // Demo: start the home-topbar ETA countdown as if backend just marked
-    // this order "out for delivery" with a 40-minute estimate.
-    startDeliveryEta(40);
+      document.getElementById('successOverlay').classList.add('show');
 
-    // Kick off the live tracking simulation for this order (rider marker,
-    // websocket-style updates, progress steps). See LIVE TRACKING module.
-    beginLiveTracking(40);
+      // Mark the pending attempt as paid + push it into payment history
+      // (used by the Orders screen and the bill/invoice view).
+      completePendingPayment(pending || startPendingPayment(method), paymentRef, cart);
 
-    Object.keys(cart).forEach(k=>delete cart[k]);
-    renderCart();
+      // Start real live tracking for this order (socket room join) instead
+      // of the old setTimeout-based simulation.
+      window.__trackedOrderId = order._id;
+      window.PD_REAL_ORDERS.startTrackingOrder(order._id, {
+        onStatus: (updated) => {
+          window.__lastOrder = updated;
+          if(typeof window.renderOrdersScreen === 'function') window.renderOrdersScreen();
+          if(updated.status === 'out') startDeliveryEta(40);
+        },
+        onAssigned: (updated) => {
+          window.__lastOrder = updated;
+          showToast('Delivery partner assigned');
+        }
+      });
+
+      Object.keys(cart).forEach(k=>delete cart[k]);
+      renderCart();
+    } catch(err){
+      showToast(err.message || 'Could not place order - please try again');
+      failPendingPayment(pending, 'failed');
+    }
   }
 
   const successDoneBtn = document.getElementById('successDoneBtn');
@@ -1365,11 +1387,10 @@
      LOGIN GATE: opened on-demand (not on app load).
      Triggers: guest taps Account, or guest taps checkout/buy-plan.
      Paths: Google Sign-In -> bind phone, OR phone number -> OTP.
-     Real integration points:
-       - Google: load https://accounts.google.com/gsi/client, replace
-         mockGoogleSignIn() with google.accounts.id.initialize/prompt,
-         send the credential JWT to POST /api/auth/google.
-       - Phone: POST /api/auth/send-otp, then POST /api/auth/verify-otp.
+     Wired to the real backend via js/auth.js, exposed as
+     window.PD_REAL_AUTH (see js/app-init.js). Google Identity
+     Services script + window.PD_GOOGLE_CLIENT_ID must be set in
+     index.html for the Google path to actually prompt.
   ========================================================= */
   function openLoginGate(onSuccess){
     pendingAuthAction = typeof onSuccess === 'function' ? onSuccess : null;
@@ -1420,50 +1441,57 @@
   if(loginGateBack) loginGateBack.addEventListener('click', closeLoginGate);
 
   // ---- Google path ----
-  function mockGoogleSignIn(){
-    // Swap for real Google Identity Services call:
-    // google.accounts.id.initialize({ client_id: 'YOUR_CLIENT_ID', callback: (r) => handleGoogleCredential(r.credential) });
-    // google.accounts.id.prompt();
-    return Promise.resolve({ googleId: 'demo_google_id', email: 'user@gmail.com', name: 'Kittu Rathod' });
-  }
-
   const googleSignInBtn = document.getElementById('googleSignInBtn');
   if(googleSignInBtn) googleSignInBtn.addEventListener('click', async ()=>{
     googleSignInBtn.disabled = true;
     googleSignInBtn.textContent = 'Signing in...';
     try{
-      const profile = await mockGoogleSignIn();
-      userSession.googleId = profile.googleId;
-      userSession.email = profile.email;
-      userSession.name = profile.name;
-      if(userSession.phone){
-        // Already bound a number previously in this session -> straight in
-        userSession.loggedIn = true;
-        completeLogin();
-      } else {
-        document.getElementById('loginStepChoice').classList.remove('active');
-        document.getElementById('loginStepBindPhone').classList.add('active');
+      // Real Google Identity Services popup is wired in js/auth.js's
+      // startGoogleSignIn(); it calls this callback with the raw credential.
+      const started = window.PD_REAL_AUTH.startGoogleSignIn(async (credential)=>{
+        const res = await window.PD_REAL_AUTH.completeGoogleLogin(credential);
+        userSession.googleId = res.user.googleId;
+        userSession.email = res.user.email;
+        userSession.name = res.user.name;
+        if(!res.needsPhone){
+          userSession.phone = res.user.phone;
+          userSession.loggedIn = true;
+          completeLogin();
+        } else {
+          document.getElementById('loginStepChoice').classList.remove('active');
+          document.getElementById('loginStepBindPhone').classList.add('active');
+        }
+        googleSignInBtn.disabled = false;
+        googleSignInBtn.textContent = 'Continue with Google';
+      });
+      if(!started){
+        showToast('Google sign-in not configured yet');
+        googleSignInBtn.disabled = false;
+        googleSignInBtn.textContent = 'Continue with Google';
       }
     } catch(err){
       showToast('Google sign-in failed, please try again');
-    } finally {
       googleSignInBtn.disabled = false;
       googleSignInBtn.textContent = 'Continue with Google';
     }
   });
 
   const bindPhoneContinueBtn = document.getElementById('bindPhoneContinueBtn');
-  if(bindPhoneContinueBtn) bindPhoneContinueBtn.addEventListener('click', ()=>{
+  if(bindPhoneContinueBtn) bindPhoneContinueBtn.addEventListener('click', async ()=>{
     const phone = document.getElementById('bindPhoneInput').value.trim();
     if(!/^\d{10}$/.test(phone)){
       showToast('Enter a valid 10-digit mobile number');
       return;
     }
-    userSession.phone = phone;
-    userSession.loggedIn = true;
-    orderDetails.phone = phone; // pre-fill checkout contact number
-    // Real integration point: POST { googleId, email, phone } to /api/auth/bind-phone
-    completeLogin();
+    try{
+      await window.PD_REAL_AUTH.bindPhone(phone);
+      userSession.phone = phone;
+      userSession.loggedIn = true;
+      orderDetails.phone = phone; // pre-fill checkout contact number
+      completeLogin();
+    } catch(err){
+      showToast(err.message || 'Could not save phone number');
+    }
   });
 
   // ---- Phone + OTP path ----
@@ -1476,21 +1504,30 @@
   let otpPendingPhone = null;
 
   const phoneLoginSendOtpBtn = document.getElementById('phoneLoginSendOtpBtn');
-  if(phoneLoginSendOtpBtn) phoneLoginSendOtpBtn.addEventListener('click', ()=>{
+  if(phoneLoginSendOtpBtn) phoneLoginSendOtpBtn.addEventListener('click', async ()=>{
     const phone = document.getElementById('phoneLoginInput').value.trim();
     if(!/^\d{10}$/.test(phone)){
       showToast('Enter a valid 10-digit mobile number');
       return;
     }
-    otpPendingPhone = phone;
-    // Real integration point: POST /api/auth/send-otp { phone }
-    document.getElementById('otpSentSub').textContent = 'Enter the 4-digit code sent to +91 ' + phone;
-    document.getElementById('loginStepPhoneEntry').classList.remove('active');
-    document.getElementById('loginStepOtp').classList.add('active');
-    document.querySelectorAll('.otp-box').forEach(b=> b.value = '');
-    const firstBox = document.querySelector('.otp-box');
-    if(firstBox) firstBox.focus();
-    showToast('OTP sent (demo: enter any 4 digits)');
+    phoneLoginSendOtpBtn.disabled = true;
+    try{
+      const res = await window.PD_REAL_AUTH.sendOtp(phone);
+      otpPendingPhone = phone;
+      document.getElementById('otpSentSub').textContent = 'Enter the 4-digit code sent to +91 ' + phone;
+      document.getElementById('loginStepPhoneEntry').classList.remove('active');
+      document.getElementById('loginStepOtp').classList.add('active');
+      document.querySelectorAll('.otp-box').forEach(b=> b.value = '');
+      const firstBox = document.querySelector('.otp-box');
+      if(firstBox) firstBox.focus();
+      // devHint is only present when the backend's OTP_DEV_MODE=true env var is set -
+      // shows the code in the toast so you can test without a real SMS provider.
+      showToast(res.devHint ? `OTP sent (dev code: ${res.devHint})` : 'OTP sent');
+    } catch(err){
+      showToast(err.message || 'Could not send OTP');
+    } finally {
+      phoneLoginSendOtpBtn.disabled = false;
+    }
   });
 
   // Auto-advance between OTP boxes
@@ -1505,23 +1542,34 @@
   });
 
   const otpResendBtn = document.getElementById('otpResendBtn');
-  if(otpResendBtn) otpResendBtn.addEventListener('click', ()=>{
-    // Real integration point: POST /api/auth/send-otp { phone: otpPendingPhone } again
-    showToast('OTP resent');
+  if(otpResendBtn) otpResendBtn.addEventListener('click', async ()=>{
+    if(!otpPendingPhone) return;
+    try{
+      const res = await window.PD_REAL_AUTH.sendOtp(otpPendingPhone);
+      showToast(res.devHint ? `OTP resent (dev code: ${res.devHint})` : 'OTP resent');
+    } catch(err){
+      showToast(err.message || 'Could not resend OTP');
+    }
   });
 
   const otpVerifyBtn = document.getElementById('otpVerifyBtn');
-  if(otpVerifyBtn) otpVerifyBtn.addEventListener('click', ()=>{
+  if(otpVerifyBtn) otpVerifyBtn.addEventListener('click', async ()=>{
     const code = Array.from(document.querySelectorAll('.otp-box')).map(b=>b.value).join('');
     if(code.length !== 4){
       showToast('Enter the full 4-digit OTP');
       return;
     }
-    // Real integration point: POST /api/auth/verify-otp { phone: otpPendingPhone, code }
-    userSession.phone = otpPendingPhone;
-    userSession.loggedIn = true;
-    orderDetails.phone = otpPendingPhone;
-    completeLogin();
+
+    try{
+      const user = await window.PD_REAL_AUTH.verifyOtp(otpPendingPhone, code);
+      userSession.phone = user.phone;
+      userSession.name = user.name || userSession.name;
+      userSession.loggedIn = true;
+      orderDetails.phone = user.phone;
+      completeLogin();
+    } catch(err){
+      showToast(err.message || 'Incorrect OTP');
+    }
   });
 
   // ---- Account screen: Login button (guest) + Log out ----
