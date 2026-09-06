@@ -25,10 +25,17 @@ const CATEGORY_ICONS = {
 };
 const FAV_ICON = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8Z"/></svg>';
 
+function resolveImageUrl(url) {
+  if (!url) return null;
+  return /^https?:\/\//i.test(url) ? url : `${API_BASE}${url}`;
+}
+
 function productCardHtml(p) {
   const discountPct = p.mrp > p.price ? Math.round(((p.mrp - p.price) / p.mrp) * 100) : 0;
-  const thumb = p.images && p.images[0]
-    ? `<img src="${API_BASE}${p.images[0]}" alt="${p.name}" style="width:100%;height:100%;object-fit:cover;border-radius:inherit;">`
+  const imgUrl = p.images && p.images[0] ? resolveImageUrl(p.images[0]) : null;
+  const fallback = (CATEGORY_ICONS[p.category] || CATEGORY_ICONS.milk).replace(/"/g, '&quot;');
+  const thumb = imgUrl
+    ? `<img src="${imgUrl}" alt="${p.name}" loading="lazy" style="width:100%;height:100%;object-fit:cover;border-radius:inherit;" onerror="this.outerHTML='${fallback}'">`
     : (CATEGORY_ICONS[p.category] || CATEGORY_ICONS.milk);
   const outOfStock = !p.available || p.stock <= 0;
 
@@ -53,8 +60,10 @@ function productCardHtml(p) {
 
 function productRailCardHtml(p) {
   const discountPct = p.mrp > p.price ? Math.round(((p.mrp - p.price) / p.mrp) * 100) : 0;
-  const thumb = p.images && p.images[0]
-    ? `<img src="${API_BASE}${p.images[0]}" alt="${p.name}" style="width:100%;height:100%;object-fit:cover;border-radius:inherit;">`
+  const imgUrl = p.images && p.images[0] ? resolveImageUrl(p.images[0]) : null;
+  const fallback = (CATEGORY_ICONS[p.category] || CATEGORY_ICONS.milk).replace(/"/g, '&quot;');
+  const thumb = imgUrl
+    ? `<img src="${imgUrl}" alt="${p.name}" loading="lazy" style="width:100%;height:100%;object-fit:cover;border-radius:inherit;" onerror="this.outerHTML='${fallback}'">`
     : (CATEGORY_ICONS[p.category] || CATEGORY_ICONS.milk);
 
   return `
