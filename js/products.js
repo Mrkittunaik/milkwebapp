@@ -30,13 +30,80 @@ function resolveImageUrl(url) {
   return /^https?:\/\//i.test(url) ? url : `${API_BASE}${url}`;
 }
 
+// Builds the thumbnail area for a card: a single static image/icon if there's
+// 0-1 images, or a swipeable + auto-scrolling carousel (dots included) if the
+// product has multiple images. Each carousel gets a unique id so its own
+// interval/observer doesn't clash with any other card's.
+let carouselSeq = 0;
+function buildThumbHtml(p, sizePx) {
+  const fallback = (CATEGORY_ICONS[p.category] || CATEGORY_ICONS.milk).replace(/"/g, '&quot;');
+  const urls = Array.isArray(p.images) ? p.images.map(resolveImageUrl).filter(Boolean) : [];
+
+  if (urls.length === 0) return CATEGORY_ICONS[p.category] || CATEGORY_ICONS.milk;
+
+  if (urls.length === 1) {
+    return `<img src="${urls[0]}" alt="${p.name}" loading="lazy" style="width:100%;height:100%;object-fit:cover;border-radius:inherit;" onerror="this.outerHTML='${fallback}'">`;
+  }
+
+  const cid = `car-${++carouselSeq}`;
+  const slides = urls.map((u, i) =>
+    `<div class="prod-car-slide"><img src="${u}" alt="${p.name}" loading="${i === 0 ? 'eager' : 'lazy'}" onerror="this.parentElement.style.display='none'"></div>`
+  ).join('');
+  const dots = urls.map((_, i) => `<span class="prod-car-dot${i === 0 ? ' active' : ''}"></span>`).join('');
+
+  return `
+    <div class="prod-car" id="${cid}" data-autoscroll>
+      <div class="prod-car-track">${slides}</div>
+      <div class="prod-car-dots">${dots}</div>
+    </div>`;
+}
+
+// Wires up swipe/scroll-driven dot sync + auto-scroll for every carousel
+// currently in the DOM. Called after every render since innerHTML wipes
+// out any previous listeners/timers.
+const carouselTimers = [];
+function initCarousels(container) {
+  carouselTimers.forEach(clearInterval);
+  carouselTimers.length = 0;
+
+  container.querySelectorAll('[data-autoscroll]').forEach(car => {
+    const track = car.querySelector('.prod-car-track');
+    const dots = car.querySelectorAll('.prod-car-dot');
+    const slideCount = dots.length;
+    if (!track || slideCount < 2) return;
+
+    let index = 0;
+    let paused = false;
+
+    const goTo = (i) => {
+      index = (i + slideCount) % slideCount;
+      track.scrollTo({ left: track.clientWidth * index, behavior: 'smooth' });
+      dots.forEach((d, di) => d.classList.toggle('active', di === index));
+    };
+
+    // Auto-advance every 2.5s, looping back to the first image.
+    const timer = setInterval(() => { if (!paused) goTo(index + 1); }, 2500);
+    carouselTimers.push(timer);
+
+    // Pause auto-scroll while the user is actively swiping/dragging, and
+    // sync the dots to wherever they land manually.
+    let scrollDebounce;
+    track.addEventListener('touchstart', () => { paused = true; }, { passive: true });
+    track.addEventListener('mousedown', () => { paused = true; });
+    track.addEventListener('scroll', () => {
+      clearTimeout(scrollDebounce);
+      scrollDebounce = setTimeout(() => {
+        index = Math.round(track.scrollLeft / track.clientWidth);
+        dots.forEach((d, di) => d.classList.toggle('active', di === index));
+        paused = false; // resume auto-scroll a moment after the user stops
+      }, 150);
+    }, { passive: true });
+  });
+}
+
 function productCardHtml(p) {
   const discountPct = p.mrp > p.price ? Math.round(((p.mrp - p.price) / p.mrp) * 100) : 0;
-  const imgUrl = p.images && p.images[0] ? resolveImageUrl(p.images[0]) : null;
-  const fallback = (CATEGORY_ICONS[p.category] || CATEGORY_ICONS.milk).replace(/"/g, '&quot;');
-  const thumb = imgUrl
-    ? `<img src="${imgUrl}" alt="${p.name}" loading="lazy" style="width:100%;height:100%;object-fit:cover;border-radius:inherit;" onerror="this.outerHTML='${fallback}'">`
-    : (CATEGORY_ICONS[p.category] || CATEGORY_ICONS.milk);
+  const thumb = buildThumbHtml(p);
   const outOfStock = !p.available || p.stock <= 0;
 
   return `
@@ -60,11 +127,7 @@ function productCardHtml(p) {
 
 function productRailCardHtml(p) {
   const discountPct = p.mrp > p.price ? Math.round(((p.mrp - p.price) / p.mrp) * 100) : 0;
-  const imgUrl = p.images && p.images[0] ? resolveImageUrl(p.images[0]) : null;
-  const fallback = (CATEGORY_ICONS[p.category] || CATEGORY_ICONS.milk).replace(/"/g, '&quot;');
-  const thumb = imgUrl
-    ? `<img src="${imgUrl}" alt="${p.name}" loading="lazy" style="width:100%;height:100%;object-fit:cover;border-radius:inherit;" onerror="this.outerHTML='${fallback}'">`
-    : (CATEGORY_ICONS[p.category] || CATEGORY_ICONS.milk);
+  const thumb = buildThumbHtml(p);
 
   return `
     <div class="prod-card" data-id="${p._id}">
@@ -91,6 +154,7 @@ function renderHomeFeaturedRail() {
   const featured = allProducts.filter(p => p.featured && p.available && p.stock > 0).slice(0, 8);
   const toShow = featured.length ? featured : allProducts.filter(p => p.available && p.stock > 0).slice(0, 8);
   rail.innerHTML = toShow.map(productRailCardHtml).join('');
+  initCarousels(rail);
 
   rail.querySelectorAll('.prod-add').forEach(btn => {
     btn.addEventListener('click', (e) => {
@@ -108,6 +172,7 @@ function renderGrid() {
   const visible = currentFilter === 'all' ? allProducts : allProducts.filter(p => p.category === currentFilter);
   grid.innerHTML = visible.map(productCardHtml).join('') ||
     `<div class="prod-empty">No products in this category right now.</div>`;
+  initCarousels(grid);
 
   // Re-wire add buttons every render since innerHTML replaced the elements.
   grid.querySelectorAll('.prod-add').forEach(btn => {
