@@ -1,10 +1,10 @@
 /* =========================================================
    SOCKET.IO CLIENT
-   One shared connection for the whole app. Connects once the
-   user has a JWT (guests browsing without login still see
-   catalog updates via a token-less "read only" connection is
-   NOT supported by the backend's auth handshake, so guests
-   simply poll products on screen-enter instead - see products.js).
+   One shared connection for the whole app. Connects on page load
+   for EVERYONE - guests included, with no auth token - so live
+   catalog updates (new/edited/removed products, price changes)
+   reach every visitor instantly. Logged-in users additionally pass
+   their JWT to unlock personal rooms (orders, notifications).
 
    Import { connectSocket, onSocket, emitSocket } from this file.
 ========================================================= */
@@ -26,13 +26,17 @@ function loadSocketIoScript() {
 }
 
 export async function connectSocket() {
-  const token = getToken();
-  if (!token) return null; // guest - no realtime channel until logged in
   if (socket && socket.connected) return socket;
 
   await loadSocketIoScript();
 
-  socket = window.io(API_BASE, { auth: { token } });
+  // Logged-in users authenticate to get their personal rooms (orders,
+  // notifications). Guests connect with no token at all - the backend
+  // still puts every connection (auth or not) into the public 'catalog'
+  // room, so live product/price/banner updates work whether or not
+  // the visitor is logged in.
+  const token = getToken();
+  socket = window.io(API_BASE, token ? { auth: { token } } : {});
 
   socket.on('connect_error', (err) => {
     console.warn('[socket] connect error:', err.message);
