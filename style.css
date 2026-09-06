@@ -259,6 +259,22 @@
   .promo-dot{width:6px; height:6px; border-radius:50%; background:var(--line);}
   .promo-dot.active{background:var(--yellow-deep); width:16px; border-radius:3px;}
 
+  /* Image-type banners: image fills the card edge-to-edge, no text drawn
+     over it (any text is already part of the uploaded image). */
+  .promo-card.promo-img{padding:0;}
+  .promo-card.promo-img img{width:100%; height:100%; object-fit:cover; display:block;}
+  .promo-card.promo-img .promo-copy-fallback{display:none;}
+  /* If an image fails to load, onerror removes the <img> and adds this
+     class - the card then shows the color+title fallback instead of a
+     broken-image icon, never a blank/broken card. */
+  .promo-card.promo-img.promo-fallback{padding:0 20px;}
+  .promo-card.promo-img.promo-fallback .promo-copy-fallback{display:block; position:relative; z-index:1;}
+
+  /* Coded placeholder banner - shown only until the admin adds a real one */
+  .promo-card.promo-placeholder{padding:0 20px;}
+  .promo-placeholder-svg{position:absolute; inset:0; width:100%; height:100%; z-index:0;}
+  .promo-card.promo-placeholder .promo-copy{position:relative; z-index:1;}
+
   /* ---------- PACKAGE / PLAN CARDS ---------- */
   .pkg-grid{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
   .pkg-card{
