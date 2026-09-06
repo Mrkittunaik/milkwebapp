@@ -237,65 +237,9 @@
       </div>
     </div>
     <div class="prod-rail-outer">
-      <div class="prod-rail">
-        <div class="prod-card">
-          <div class="prod-thumb">
-            <span class="disc">-20%</span>
-            <span class="fav"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8Z"/></svg></span>
-            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#4CAF6D" stroke-width="1.6"><path d="M8 2h8M9 2v5.2a3 3 0 0 1-.6 1.8L6 12.4A4 4 0 0 0 5 15v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5a4 4 0 0 0-1-2.6l-2.4-3.4A3 3 0 0 1 15 7.2V2"/></svg>
-          </div>
-          <div class="prod-body">
-            <div class="prod-name">Full Cream Milk</div>
-            <div class="prod-meta">500 ml &middot; Glass bottle</div>
-            <div class="prod-bottom">
-              <div class="prod-price"><s>₹40</s>₹32</div>
-              <button class="prod-add" data-name="Full Cream Milk" data-price="32">+</button>
-            </div>
-          </div>
-        </div>
-        <div class="prod-card">
-          <div class="prod-thumb">
-            <span class="fav"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8Z"/></svg></span>
-            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#4CAF6D" stroke-width="1.6"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M8 8V6a4 4 0 0 1 8 0v2"/></svg>
-          </div>
-          <div class="prod-body">
-            <div class="prod-name">Fresh Paneer</div>
-            <div class="prod-meta">200 g &middot; Soft block</div>
-            <div class="prod-bottom">
-              <div class="prod-price">₹90</div>
-              <button class="prod-add" data-name="Fresh Paneer" data-price="90">+</button>
-            </div>
-          </div>
-        </div>
-        <div class="prod-card">
-          <div class="prod-thumb">
-            <span class="disc">-10%</span>
-            <span class="fav"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8Z"/></svg></span>
-            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#4CAF6D" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
-          </div>
-          <div class="prod-body">
-            <div class="prod-name">Pure Cow Ghee</div>
-            <div class="prod-meta">500 ml &middot; Glass jar</div>
-            <div class="prod-bottom">
-              <div class="prod-price"><s>₹399</s>₹359</div>
-              <button class="prod-add" data-name="Pure Cow Ghee" data-price="359">+</button>
-            </div>
-          </div>
-        </div>
-        <div class="prod-card">
-          <div class="prod-thumb">
-            <span class="fav"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8Z"/></svg></span>
-            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#4CAF6D" stroke-width="1.6"><path d="M6 11c0-4 3-7 6-9 3 2 6 5 6 9a6 6 0 0 1-12 0Z"/></svg>
-          </div>
-          <div class="prod-body">
-            <div class="prod-name">Fresh Curd</div>
-            <div class="prod-meta">400 g &middot; Set curd</div>
-            <div class="prod-bottom">
-              <div class="prod-price">₹45</div>
-              <button class="prod-add" data-name="Fresh Curd" data-price="45">+</button>
-            </div>
-          </div>
-        </div>
+      <div class="prod-rail" id="homeFeaturedRail">
+        <!-- Real featured products are loaded here live from the backend by
+             js/products.js. This starts empty - no fake/demo product cards. -->
       </div>
     </div>
 
@@ -330,92 +274,8 @@
       <div class="cat-chip" data-filter="curd">Curd</div>
     </div>
     <div class="prod-grid" id="prodGrid">
-      <div class="prod-card grid" data-cat="milk">
-        <div class="prod-thumb">
-          <span class="disc">-20%</span>
-          <span class="fav"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8Z"/></svg></span>
-          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#4CAF6D" stroke-width="1.6"><path d="M8 2h8M9 2v5.2a3 3 0 0 1-.6 1.8L6 12.4A4 4 0 0 0 5 15v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5a4 4 0 0 0-1-2.6l-2.4-3.4A3 3 0 0 1 15 7.2V2"/></svg>
-        </div>
-        <div class="prod-body">
-          <div class="prod-name">Full Cream Milk</div>
-          <div class="prod-meta">500 ml &middot; Glass bottle</div>
-          <div class="prod-bottom">
-            <div class="prod-price"><s>₹40</s>₹32</div>
-            <button class="prod-add" data-name="Full Cream Milk" data-price="32">+</button>
-          </div>
-        </div>
-      </div>
-      <div class="prod-card grid" data-cat="milk">
-        <div class="prod-thumb">
-          <span class="fav"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8Z"/></svg></span>
-          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#4CAF6D" stroke-width="1.6"><path d="M8 2h8M9 2v5.2a3 3 0 0 1-.6 1.8L6 12.4A4 4 0 0 0 5 15v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5a4 4 0 0 0-1-2.6l-2.4-3.4A3 3 0 0 1 15 7.2V2"/></svg>
-        </div>
-        <div class="prod-body">
-          <div class="prod-name">Toned Milk</div>
-          <div class="prod-meta">500 ml &middot; Glass bottle</div>
-          <div class="prod-bottom">
-            <div class="prod-price">₹28</div>
-            <button class="prod-add" data-name="Toned Milk" data-price="28">+</button>
-          </div>
-        </div>
-      </div>
-      <div class="prod-card grid" data-cat="paneer">
-        <div class="prod-thumb">
-          <span class="fav"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8Z"/></svg></span>
-          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#4CAF6D" stroke-width="1.6"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M8 8V6a4 4 0 0 1 8 0v2"/></svg>
-        </div>
-        <div class="prod-body">
-          <div class="prod-name">Fresh Paneer</div>
-          <div class="prod-meta">200 g &middot; Soft block</div>
-          <div class="prod-bottom">
-            <div class="prod-price">₹90</div>
-            <button class="prod-add" data-name="Fresh Paneer" data-price="90">+</button>
-          </div>
-        </div>
-      </div>
-      <div class="prod-card grid" data-cat="ghee">
-        <div class="prod-thumb">
-          <span class="disc">-10%</span>
-          <span class="fav"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8Z"/></svg></span>
-          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#4CAF6D" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
-        </div>
-        <div class="prod-body">
-          <div class="prod-name">Pure Cow Ghee</div>
-          <div class="prod-meta">500 ml &middot; Glass jar</div>
-          <div class="prod-bottom">
-            <div class="prod-price"><s>₹399</s>₹359</div>
-            <button class="prod-add" data-name="Pure Cow Ghee" data-price="359">+</button>
-          </div>
-        </div>
-      </div>
-      <div class="prod-card grid" data-cat="curd">
-        <div class="prod-thumb">
-          <span class="fav"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8Z"/></svg></span>
-          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#4CAF6D" stroke-width="1.6"><path d="M6 11c0-4 3-7 6-9 3 2 6 5 6 9a6 6 0 0 1-12 0Z"/></svg>
-        </div>
-        <div class="prod-body">
-          <div class="prod-name">Fresh Curd</div>
-          <div class="prod-meta">400 g &middot; Set curd</div>
-          <div class="prod-bottom">
-            <div class="prod-price">₹45</div>
-            <button class="prod-add" data-name="Fresh Curd" data-price="45">+</button>
-          </div>
-        </div>
-      </div>
-      <div class="prod-card grid" data-cat="paneer">
-        <div class="prod-thumb">
-          <span class="fav"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8Z"/></svg></span>
-          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#4CAF6D" stroke-width="1.6"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M8 8V6a4 4 0 0 1 8 0v2"/></svg>
-        </div>
-        <div class="prod-body">
-          <div class="prod-name">Malai Paneer</div>
-          <div class="prod-meta">200 g &middot; Extra soft</div>
-          <div class="prod-bottom">
-            <div class="prod-price">₹110</div>
-            <button class="prod-add" data-name="Malai Paneer" data-price="110">+</button>
-          </div>
-        </div>
-      </div>
+      <!-- Real products are loaded here live from the backend by js/products.js.
+           This starts empty - no fake/demo product cards. -->
     </div>
   </div>
 
