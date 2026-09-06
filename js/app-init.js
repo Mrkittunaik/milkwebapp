@@ -50,11 +50,14 @@ window.PD_REAL_ORDERS = {
   fetchMyOrders
 };
 
-// ---- If already logged in from a previous session, reconnect the
-// socket immediately and start the notification listener. ----
+// ---- Connect the realtime channel for EVERYONE, guest or logged in, so
+// live product/price/banner updates (catalog:changed) reach every visitor
+// immediately - not just people who are signed in. Login-only features
+// (notifications, "my orders" live refresh) are wired separately below. ----
 (async function boot() {
-  if (!isLoggedIn()) return;
   await connectSocket();
+
+  if (!isLoggedIn()) return;
   const myUserId = getTokenUserId();
 
   initNotifications({
