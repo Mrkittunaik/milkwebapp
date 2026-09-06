@@ -305,22 +305,9 @@
     rafId = requestAnimationFrame(step);
   })();
 
-  // ---- Auto-scroll promo banner (snap, one card at a time) ----
-  (function(){
-    const rail = document.getElementById('promoRail');
-    const dots = document.querySelectorAll('#promoDots .promo-dot');
-    let idx = 0;
-    const count = dots.length;
-    let paused = false;
-    rail.addEventListener('touchstart', ()=>paused=true);
-    rail.addEventListener('touchend', ()=>setTimeout(()=>paused=false,3000));
-    setInterval(()=>{
-      if(paused) return;
-      idx = (idx + 1) % count;
-      rail.scrollTo({left: rail.clientWidth * idx, behavior:'smooth'});
-      dots.forEach((d,i)=>d.classList.toggle('active', i===idx));
-    }, 3200);
-  })();
+  // NOTE: promo banner auto-scroll used to be wired here as static HTML.
+  // It's now fully owned by js/banners.js (initBanners), which fetches
+  // real banners from the admin panel and keeps them live over sockets.
 
   /* =========================================================
      TOAST
