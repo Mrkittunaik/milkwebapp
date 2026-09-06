@@ -117,6 +117,11 @@ export const productsApi = {
   getOne: (id) => api.get(`/api/products/${id}`)
 };
 
+/* ---------------- Banners ---------------- */
+export const bannersApi = {
+  list: () => api.get('/api/banners') // public: active banners only, already sorted
+};
+
 /* ---------------- Orders ---------------- */
 export const ordersApi = {
   create: (payload) => api.post('/api/orders', payload),
