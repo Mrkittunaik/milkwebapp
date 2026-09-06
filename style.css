@@ -311,6 +311,22 @@
     position:absolute; top:8px; left:8px; background:var(--green); color:#fff; font-size:9.5px; font-weight:800;
     padding:3px 7px; border-radius:5px;
   }
+  .prod-car{width:100%; height:100%; position:relative;}
+  .prod-car-track{
+    width:100%; height:100%; display:flex; overflow-x:auto; scroll-snap-type:x mandatory;
+    scrollbar-width:none; -webkit-overflow-scrolling:touch;
+  }
+  .prod-car-track::-webkit-scrollbar{display:none;}
+  .prod-car-slide{flex:0 0 100%; scroll-snap-align:start; height:100%;}
+  .prod-car-slide img{width:100%; height:100%; object-fit:cover; display:block;}
+  .prod-car-dots{
+    position:absolute; bottom:6px; left:0; right:0; display:flex; justify-content:center; gap:4px; z-index:2;
+  }
+  .prod-car-dot{
+    width:5px; height:5px; border-radius:50%; background:rgba(255,255,255,.6);
+    box-shadow:0 0 0 .5px rgba(0,0,0,.1); transition:background .2s, transform .2s;
+  }
+  .prod-car-dot.active{background:#fff; transform:scale(1.3);}
   .prod-body{padding:10px 12px 12px;}
   .prod-name{font-size:12.5px; font-weight:700; line-height:1.3; margin-bottom:2px;}
   .prod-meta{font-size:10.5px; color:var(--muted); margin-bottom:8px;}
