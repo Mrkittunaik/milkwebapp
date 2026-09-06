@@ -1747,16 +1747,9 @@
   });
 
   // Seed with realistic starter notifications so the bell isn't empty on first load
-  (function seedNotifications(){
-    const now = Date.now();
-    pushNotification({ title:'Order delivered', sub:'Your 1L Toned Milk was delivered at 6:52 AM', kind:'deliver', time:new Date(now - 45*60000) });
-    pushNotification({ title:'Delivery boy on the way', sub:'Ravi is 10 minutes away with your order', kind:'order', time:new Date(now - 3*3600000) });
-    pushNotification({ title:'Flat ₹50 off', sub:'Subscribe to any monthly plan and save ₹50 this week', kind:'promo', time:new Date(now - 20*3600000) });
-    pushNotification({ title:'Payment received', sub:'₹899 received for Family Pack subscription', kind:'deliver', time:new Date(now - 26*3600000) });
-    pushNotification({ title:'Plan renews in 3 days', sub:'Your Family Pack · Monthly renews soon — manage it anytime', kind:'renew', time:new Date(now - 30*3600000) });
-    notifications.sort((a,b)=> b.time - a.time);
-    renderNotifBadge();
-  })();
+  // Notifications are now populated live from the backend via
+  // js/notifications.js (real order/payment/subscription socket events),
+  // not seeded with fake demo entries here.
 
   /* =========================================================
      SUBSCRIPTION MANAGEMENT (in-memory mock — no backend yet)
