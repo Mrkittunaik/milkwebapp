@@ -14,6 +14,7 @@
 import { isLoggedIn, getTokenUserId, usersApi } from './api.js';
 import { connectSocket } from './socket.js';
 import { initProducts, getProductById } from './products.js';
+import { initPlans, getPlanById } from './plans.js';
 import { initBanners } from './banners.js';
 import { initNotifications, requestPushPermission } from './notifications.js';
 import { placeRealOrder, startTrackingOrder, stopTrackingOrder, onMyOrdersChanged, fetchMyOrders } from './orders.js';
@@ -26,6 +27,18 @@ initProducts({
   onAdd: ({ id, name, price }, btnEl) => {
     if (typeof window.addToCart === 'function') {
       window.addToCart(name, price, id); // script.js patch: accept optional productId, see notes
+    }
+    if (typeof window.flyToCart === 'function') window.flyToCart(btnEl);
+  }
+});
+
+// ---- Plans/packages: fetch from admin-managed plans, live over sockets.
+// "Subscribe" adds it to the same cart as products (script.js already
+// handles checkout for whatever's in window.cart, so no extra plumbing). ----
+initPlans({
+  onAdd: ({ id, name, price }, btnEl) => {
+    if (typeof window.addToCart === 'function') {
+      window.addToCart(name, price, id);
     }
     if (typeof window.flyToCart === 'function') window.flyToCart(btnEl);
   }
