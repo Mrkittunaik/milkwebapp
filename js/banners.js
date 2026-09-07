@@ -28,10 +28,22 @@
 import { bannersApi, API_BASE } from './api.js';
 import { onSocket } from './socket.js';
 
+const CACHE_KEY = 'pd_cache_banners';
+
 let banners = [];
 let railIdx = 0;
 let autoTimer = null;
 let paused = false;
+
+function loadCachedBanners() {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) { return []; }
+}
+function saveCachedBanners(list) {
+  try { localStorage.setItem(CACHE_KEY, JSON.stringify(list)); } catch (e) { /* storage unavailable */ }
+}
 
 // Coded (inline SVG) placeholder - shown ONLY when the admin has zero
 // banners saved. Nothing here is a raster image file, so there's no
@@ -152,13 +164,13 @@ function renderBanners() {
 async function loadBanners() {
   try {
     banners = await bannersApi.list();
+    saveCachedBanners(banners);
     renderBanners();
   } catch (err) {
     console.error('[banners] failed to load:', err.message);
-    // Couldn't reach the backend - show the safe coded placeholder
-    // rather than a blank section or anything broken.
-    banners = [];
-    renderBanners();
+    // Couldn't reach the backend - keep whatever's already showing
+    // (cached banners) instead of wiping it back to the placeholder.
+    if (!banners.length) renderBanners();
   }
 }
 
@@ -170,6 +182,14 @@ export function initBanners() {
   rail.addEventListener('touchend', () => setTimeout(() => { paused = false; }, 3000));
   rail.addEventListener('mousedown', () => { paused = true; });
   rail.addEventListener('mouseup', () => setTimeout(() => { paused = false; }, 3000));
+
+  // Show last-known banners immediately instead of the placeholder while
+  // the network call is in flight, then loadBanners() refreshes silently.
+  const cached = loadCachedBanners();
+  if (cached.length) {
+    banners = cached;
+    renderBanners();
+  }
 
   loadBanners();
 
