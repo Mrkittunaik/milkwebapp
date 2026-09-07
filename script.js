@@ -83,7 +83,18 @@
   });
 
   document.querySelectorAll('[data-goto]').forEach(el=>{
-    el.addEventListener('click', ()=> goToScreen(el.dataset.goto));
+    el.addEventListener('click', ()=> {
+      goToScreen(el.dataset.goto);
+      // "Help & Support" lives inside the Orders screen (below order
+      // history) - jump straight to that section instead of leaving the
+      // user to scroll down and find it themselves.
+      if(el.id === 'helpSupportRow'){
+        setTimeout(()=>{
+          const helpCard = document.querySelector('#screen-orders .help-support-card');
+          if(helpCard) helpCard.scrollIntoView({ behavior:'smooth', block:'start' });
+        }, 60);
+      }
+    });
   });
 
   // FAB: quick jump to Cart
@@ -1799,6 +1810,20 @@
   (function(){
     const CUTOFF_HOUR = 22; // 10 PM
 
+    // Whether the user actually has an active plan/subscription. Derived
+    // from real order history (paymentHistory) instead of always assuming
+    // one exists - a plan-type line item ("...Pack", "subscription",
+    // "plan", "/day", "/week", "/month" in the name) in a paid order counts
+    // as active until real backend subscription state exists.
+    function hasActiveSubscription(){
+      if(typeof paymentHistory === 'undefined' || !Array.isArray(paymentHistory)) return false;
+      return paymentHistory.some(order =>
+        order.status === 'paid' &&
+        Array.isArray(order.items) &&
+        order.items.some(it => /plan|subscription|pack|\/day|\/week|\/month/i.test(it.name || ''))
+      );
+    }
+
     // ---- Mock plan state ----
     const planStart = new Date(); planStart.setDate(planStart.getDate() - 6); planStart.setHours(0,0,0,0);
     let planEnd = new Date(planStart); planEnd.setDate(planEnd.getDate() + 29);
@@ -2237,14 +2262,79 @@
 
     /* ---------- Init on screen entry ---------- */
     let subInitDone = false;
-    document.getElementById('manageSubRow').addEventListener('click', function(){
-      renderCalendar();
-      if(!subInitDone){
-        subInitDone = true;
-        setTimeout(maybeShowRenewalReminder, 500);
+    function renderSubscriptionScreen(){
+      const empty = document.getElementById('subEmptyState');
+      const active = document.getElementById('subActiveContent');
+      if(!empty || !active) return;
+      if(hasActiveSubscription()){
+        empty.style.display = 'none';
+        active.style.display = '';
+        renderCalendar();
+        if(!subInitDone){
+          subInitDone = true;
+          setTimeout(maybeShowRenewalReminder, 500);
+        }
+      } else {
+        empty.style.display = 'flex';
+        active.style.display = 'none';
       }
-    });
+    }
+    document.getElementById('manageSubRow').addEventListener('click', renderSubscriptionScreen);
+    const subEmptyBrowseBtn = document.getElementById('subEmptyBrowseBtn');
+    if(subEmptyBrowseBtn){
+      subEmptyBrowseBtn.addEventListener('click', ()=> goToScreen('home'));
+    }
+    window.renderSubscriptionScreen = renderSubscriptionScreen; // re-checked after a plan purchase completes
   })();
+
+  /* =========================================================================
+     PAYMENT METHODS SCREEN
+     -------------------------------------------------------------------------
+     Real methods aren't collected/stored yet (no card vault, no backend) -
+     so this derives a de-duplicated list of methods the user has actually
+     PAID with before, from the same paymentHistory used by the Orders
+     screen. Shows a genuine empty state if they've never completed an
+     order yet, instead of a fake pre-filled list.
+  ========================================================================= */
+  const PAY_METHOD_META = {
+    upi:    { label:'UPI', sub:'Google Pay, PhonePe, Paytm', icon:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 10h18M7 15h.01M11 15h2"/><rect x="2" y="5" width="20" height="14" rx="3"/></svg>' },
+    card:   { label:'Credit / Debit Card', sub:'Visa, Mastercard, RuPay', icon:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="3"/><path d="M2 10h20"/></svg>' },
+    wallet: { label:'Wallet', sub:'Pakka Cash', icon:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2Z"/><path d="M16 3H8a2 2 0 0 0-2 2v2h12V5a2 2 0 0 0-2-2Z"/></svg>' },
+    cod:    { label:'Cash on Delivery', sub:'Pay when you receive', icon:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M8 12h8M12 8v8"/></svg>' }
+  };
+  function renderPaymentMethodsScreen(){
+    const list = document.getElementById('payMethodsList');
+    const empty = document.getElementById('payMethodsEmpty');
+    if(!list || !empty) return;
+
+    const paidOrders = (typeof paymentHistory !== 'undefined' && Array.isArray(paymentHistory))
+      ? paymentHistory.filter(o => o.status === 'paid' && o.method)
+      : [];
+
+    const usedMethods = [...new Set(paidOrders.map(o => o.method))];
+
+    if(usedMethods.length === 0){
+      list.innerHTML = '';
+      empty.style.display = 'flex';
+      return;
+    }
+
+    empty.style.display = 'none';
+    list.innerHTML = usedMethods.map(m=>{
+      const meta = PAY_METHOD_META[m] || { label:m, sub:'', icon:'' };
+      const lastUsed = paidOrders.find(o => o.method === m);
+      return `
+        <div class="pay-method" style="cursor:default;">
+          <div class="pm-ic">${meta.icon}</div>
+          <div style="flex:1;">
+            <div class="pm-label">${meta.label}</div>
+            <div class="pm-sub">${meta.sub}${lastUsed ? ' &middot; last used ' + lastUsed.date : ''}</div>
+          </div>
+        </div>`;
+    }).join('');
+  }
+  document.getElementById('paymentMethodsRow').addEventListener('click', renderPaymentMethodsScreen);
+  window.renderPaymentMethodsScreen = renderPaymentMethodsScreen; // re-checked after a new payment completes
 
   /* =========================================================================
      PAYMENT RESUME + HISTORY MODULE
@@ -2362,6 +2452,8 @@
     clearPendingPayment();
     renderPayResumeBanner();
     renderOrderHistory();
+    if(typeof window.renderSubscriptionScreen === 'function') window.renderSubscriptionScreen();
+    if(typeof window.renderPaymentMethodsScreen === 'function') window.renderPaymentMethodsScreen();
     window.__lastCompletedOrder = entry;
     return entry;
   }
