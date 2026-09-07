@@ -367,6 +367,7 @@
   .pkg-btn-subscribed{
     background:var(--green-light) !important; color:var(--green-dim) !important;
     display:flex; align-items:center; justify-content:center; gap:5px; border:1px solid var(--green-dim);
+    opacity:1; cursor:default;
   }
 
   .pkg-dots{display:flex; justify-content:center; gap:5px; margin-top:8px;}
