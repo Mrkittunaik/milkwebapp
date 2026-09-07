@@ -144,40 +144,80 @@
   });
 
   // ---- Cart rendering ----
+  // Rebuilds existing rows in-place instead of wiping + recreating the whole
+  // list on every render. Recreating every row (old behaviour) replayed each
+  // row's "slide/fade in" entrance animation on every +/- click, which is
+  // what looked like the whole card "blinking". Now only rows that are
+  // genuinely new (first add) get the entrance animation; existing rows are
+  // updated in place and just get a small qty-bump pulse.
   function renderCart(){
     const list = document.getElementById('cartList');
     const empty = document.getElementById('cartEmpty');
     const summary = document.getElementById('cartSummary');
     const totalEl = document.getElementById('cartTotal');
     const items = Object.values(cart);
-    list.innerHTML = '';
     let total = 0, count = 0;
 
     if(items.length === 0){
       empty.style.display = 'flex';
       summary.style.display = 'none';
+      list.innerHTML = '';
     } else {
       empty.style.display = 'none';
       summary.style.display = 'block';
+
+      const seenKeys = new Set();
+
       items.forEach(item=>{
         total += item.price * item.qty;
         count += item.qty;
-        const row = document.createElement('div');
-        row.className = 'cart-item';
-        row.innerHTML = `
-          <div class="cart-item-ic">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 2h8M9 2v5.2a3 3 0 0 1-.6 1.8L6 12.4A4 4 0 0 0 5 15v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5a4 4 0 0 0-1-2.6l-2.4-3.4A3 3 0 0 1 15 7.2V2"/></svg>
-          </div>
-          <div class="cart-item-info">
-            <div class="cart-item-name">${item.name}</div>
-            <div class="cart-item-price">₹${item.price} &times; ${item.qty}</div>
-          </div>
-          <div class="cart-item-qty">
-            <button data-act="dec" data-key="${item.key}">−</button>
-            <span>${item.qty}</span>
-            <button data-act="inc" data-key="${item.key}">+</button>
-          </div>`;
-        list.appendChild(row);
+        seenKeys.add(item.key);
+
+        let row = list.querySelector(`.cart-item[data-key="${item.key}"]`);
+
+        if(!row){
+          // Brand new line item - create it once, play the entrance animation.
+          row = document.createElement('div');
+          row.className = 'cart-item';
+          row.dataset.key = item.key;
+          row.innerHTML = `
+            <div class="cart-item-ic">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 2h8M9 2v5.2a3 3 0 0 1-.6 1.8L6 12.4A4 4 0 0 0 5 15v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5a4 4 0 0 0-1-2.6l-2.4-3.4A3 3 0 0 1 15 7.2V2"/></svg>
+            </div>
+            <div class="cart-item-info">
+              <div class="cart-item-name">${item.name}</div>
+              <div class="cart-item-price">₹${item.price} &times; <span class="qty-inline">${item.qty}</span></div>
+            </div>
+            <div class="cart-item-qty">
+              <button data-act="dec" data-key="${item.key}">−</button>
+              <span class="cart-qty-num">${item.qty}</span>
+              <button data-act="inc" data-key="${item.key}">+</button>
+            </div>`;
+          list.appendChild(row);
+          wireCartRowButtons(row);
+        } else {
+          // Existing line item - just update the numbers in place, with a
+          // quick pulse on the qty so the +/- change still feels responsive
+          // without re-animating/blinking the entire card.
+          const qtyEl = row.querySelector('.cart-qty-num');
+          const qtyInline = row.querySelector('.qty-inline');
+          if(qtyEl && qtyEl.textContent !== String(item.qty)){
+            qtyEl.textContent = item.qty;
+            qtyEl.classList.remove('qty-bump');
+            // eslint-disable-next-line no-unused-expressions
+            void qtyEl.offsetWidth; // restart animation
+            qtyEl.classList.add('qty-bump');
+          }
+          if(qtyInline) qtyInline.textContent = item.qty;
+        }
+      });
+
+      // Remove rows for items no longer in the cart (qty hit 0 / removed).
+      list.querySelectorAll('.cart-item').forEach(row=>{
+        if(!seenKeys.has(row.dataset.key)){
+          row.classList.add('cart-item-out');
+          setTimeout(()=> row.remove(), 180);
+        }
       });
     }
 
@@ -195,8 +235,14 @@
       if(cartIcon) cartIcon.textContent = 0;
     }
 
-    // wire qty buttons
-    list.querySelectorAll('button[data-act]').forEach(btn=>{
+    if (typeof window.onCartChanged === 'function') window.onCartChanged();
+  }
+
+  // Wires the +/- buttons for a single cart row. Only called once per row
+  // (on creation) since the row itself is now reused across renders instead
+  // of being torn down and rebuilt every time.
+  function wireCartRowButtons(row){
+    row.querySelectorAll('button[data-act]').forEach(btn=>{
       btn.addEventListener('click', ()=>{
         const key = btn.dataset.key;
         if(!cart[key]) return;
@@ -208,8 +254,6 @@
         renderCart();
       });
     });
-
-    if (typeof window.onCartChanged === 'function') window.onCartChanged();
   }
 
   function addToCart(name, price, id){
