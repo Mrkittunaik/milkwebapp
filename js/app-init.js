@@ -14,7 +14,7 @@
 import { isLoggedIn, getTokenUserId, usersApi } from './api.js';
 import { connectSocket } from './socket.js';
 import { initProducts, getProductById } from './products.js';
-import { initPlans, getPlanById } from './plans.js';
+import { initPlans, getPlanById } from './plan.js';
 import { initBanners } from './banners.js';
 import { initNotifications, requestPushPermission } from './notifications.js';
 import { placeRealOrder, startTrackingOrder, stopTrackingOrder, onMyOrdersChanged, fetchMyOrders } from './orders.js';
