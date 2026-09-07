@@ -26,15 +26,29 @@ const CATEGORY_ICONS = {
 const FAV_ICON = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8Z"/></svg>';
 
 // Looks up the live quantity of a product currently in the cart (script.js's
-// window.cart, keyed by product name) so cards can show a live +/qty/- stepper
-// instead of a static "+" once something has been added.
+// window.cart, keyed by product id) so cards can show a live +/qty/- stepper
+// instead of a static "+" once something has been added. Keyed by id (not
+// name) since two different products can share a display name.
 function cartQtyFor(p) {
-  const entry = window.cart && window.cart[p.name];
+  const entry = window.cart && window.cart[p._id];
   return entry ? entry.qty : 0;
 }
 
+// Tracks which product ids are currently showing the brief "Added ✓"
+// confirmation state, right after the first tap, before settling into
+// the persistent -/qty/+ stepper.
+const justAddedIds = new Set();
+
 function addBtnHtml(p, outOfStock) {
   const qty = cartQtyFor(p);
+
+  if (justAddedIds.has(p._id)) {
+    return `<button class="prod-added" disabled data-id="${p._id}">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+      Added
+    </button>`;
+  }
+
   if (qty > 0) {
     return `
       <div class="prod-stepper" data-id="${p._id}" data-name="${p.name}" data-price="${p.price}">
@@ -44,6 +58,20 @@ function addBtnHtml(p, outOfStock) {
       </div>`;
   }
   return `<button class="prod-add" data-id="${p._id}" data-name="${p.name}" data-price="${p.price}" ${outOfStock ? 'disabled' : ''}>+</button>`;
+}
+
+// Shows the "Added ✓" state for a product for a moment, then re-renders
+// into the normal stepper. Called right after the very first add so the
+// user gets clear confirmation before the +/- controls appear.
+function flashAdded(productId) {
+  justAddedIds.add(productId);
+  renderGrid();
+  renderHomeFeaturedRail();
+  setTimeout(() => {
+    justAddedIds.delete(productId);
+    renderGrid();
+    renderHomeFeaturedRail();
+  }, 900);
 }
 
 function resolveImageUrl(url) {
@@ -182,6 +210,7 @@ function renderHomeFeaturedRail() {
       e.stopPropagation();
       const { id, name, price } = btn.dataset;
       if (typeof onAddToCart === 'function') onAddToCart({ id, name, price: Number(price) }, btn);
+      flashAdded(id);
     });
   });
   wireSteppers(rail);
@@ -203,6 +232,7 @@ function renderGrid() {
       if (btn.disabled) return;
       const { id, name, price } = btn.dataset;
       if (typeof onAddToCart === 'function') onAddToCart({ id, name, price: Number(price) }, btn);
+      flashAdded(id);
     });
   });
   wireSteppers(grid);
@@ -226,7 +256,7 @@ function wireSteppers(container) {
 
     decBtn?.addEventListener('click', (e) => {
       e.stopPropagation();
-      if (typeof window.decrementCartItem === 'function') window.decrementCartItem(name);
+      if (typeof window.decrementCartItem === 'function') window.decrementCartItem(id);
     });
   });
 }
