@@ -25,10 +25,15 @@ import { sendOtp, verifyOtp, completeGoogleLogin, bindPhone, startGoogleSignIn }
 // rendering/checkout logic in script.js keeps working unmodified. ----
 initProducts({
   onAdd: ({ id, name, price }, btnEl) => {
+    // Capture the button's position and fire the fly-to-cart animation
+    // BEFORE addToCart, since addToCart triggers renderCart() ->
+    // onCartChanged() -> renderGrid(), which replaces btnEl's card
+    // (and btnEl itself) with a fresh stepper. Doing it after would
+    // measure a detached element and the animation would never show.
+    if (typeof window.flyToCart === 'function') window.flyToCart(btnEl);
     if (typeof window.addToCart === 'function') {
       window.addToCart(name, price, id); // script.js patch: accept optional productId, see notes
     }
-    if (typeof window.flyToCart === 'function') window.flyToCart(btnEl);
   }
 });
 
@@ -37,10 +42,10 @@ initProducts({
 // handles checkout for whatever's in window.cart, so no extra plumbing). ----
 initPlans({
   onAdd: ({ id, name, price }, btnEl) => {
+    if (typeof window.flyToCart === 'function') window.flyToCart(btnEl);
     if (typeof window.addToCart === 'function') {
       window.addToCart(name, price, id);
     }
-    if (typeof window.flyToCart === 'function') window.flyToCart(btnEl);
   }
 });
 
