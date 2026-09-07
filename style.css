@@ -396,13 +396,21 @@
     height:110px; background:var(--card-hi); display:flex; align-items:center; justify-content:center;
     position:relative;
   }
+  /* Product photo fills the thumb box behind the disc/fav badges - needs to
+     be explicitly positioned+z-indexed under them, otherwise an uploaded
+     image (painted after them in DOM) visually covers the badges even
+     though they're position:absolute. */
+  .prod-thumb > img{
+    position:absolute; inset:0; width:100%; height:100%; object-fit:cover; z-index:0;
+  }
   .prod-thumb .fav{
     position:absolute; top:8px; right:8px; width:26px; height:26px; border-radius:50%;
     background:rgba(255,255,255,.85); display:flex; align-items:center; justify-content:center; color:var(--muted);
+    z-index:2;
   }
   .prod-thumb .disc{
     position:absolute; top:8px; left:8px; background:var(--green); color:#fff; font-size:9.5px; font-weight:800;
-    padding:3px 7px; border-radius:5px;
+    padding:3px 7px; border-radius:5px; z-index:2;
   }
   .prod-car{width:100%; height:100%; position:relative;}
   .prod-car-track{
@@ -783,6 +791,22 @@
   }
   .det-geo-map{ width:100%; height:100%; }
   .det-geo-map .leaflet-control-attribution{font-size:9px;}
+  /* Google-Maps-style "you are here" blue dot, drawn at the raw GPS fix
+     (not the adjustable green pin). Pulsing halo mirrors the live-location
+     marker people already recognize from Google Maps/Uber. */
+  .gps-blue-dot{
+    width:16px; height:16px; border-radius:50%; background:#4285F4; border:3px solid #fff;
+    box-shadow:0 0 0 2px rgba(66,133,244,.35), 0 1px 4px rgba(0,0,0,.35);
+    position:relative;
+  }
+  .gps-blue-dot::after{
+    content:''; position:absolute; inset:-10px; border-radius:50%; background:rgba(66,133,244,.35);
+    animation:gpsDotPulse 1.8s ease-out infinite;
+  }
+  @keyframes gpsDotPulse{
+    0%{ transform:scale(.4); opacity:.8; }
+    100%{ transform:scale(1.8); opacity:0; }
+  }
   /* Pin stays visually fixed at the exact center of the card. Its SVG tip
      (bottom point) is what marks the true lat/lng — translate so the tip,
      not the whole icon, sits on the center point. */
