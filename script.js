@@ -68,6 +68,7 @@
 
   // ---- Screen navigation ----
   function goToScreen(name){
+    const leavingTrack = document.getElementById('screen-track')?.classList.contains('active') && name !== 'track';
     document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
     const target = document.getElementById('screen-' + name);
     if(target) target.classList.add('active');
@@ -76,6 +77,9 @@
     });
     const scr = document.querySelector('.screen.active');
     if(scr) scr.scrollTop = 0;
+    // Stop watching the customer's own GPS once they leave the live
+    // tracking screen — no need to keep polling location in the background.
+    if(leavingTrack && typeof window.stopMyLiveLocation === 'function') window.stopMyLiveLocation();
   }
 
   document.querySelectorAll('.nav-item[data-screen]').forEach(item=>{
@@ -1031,7 +1035,6 @@
     detCapturedGPS = null;
     detManuallyAdjusted = false;
   }
-
   if(addNewAddrBtn) addNewAddrBtn.addEventListener('click', ()=>{
     newAddrForm.style.display = 'block';
     newAddrForm.scrollIntoView({ behavior:'smooth', block:'nearest' });
@@ -1095,21 +1098,23 @@
   const detGeoPin = document.getElementById('detGeoPin');
   const detGeoRecenterBtn = document.getElementById('detGeoRecenterBtn');
   let detLeafletMap = null;
-  let detLeafletCircle = null;
+  let detLeafletCircle = null;      // green "delivery radius" circle around the adjustable pin
+  let detLeafletAccuracyDot = null; // blue Google-Maps-style dot at the RAW GPS fix
+  let detLeafletAccuracyRing = null;// translucent blue ring showing actual GPS accuracy radius
   const ADDRESS_RADIUS_METERS = 50;   // delivery-radius circle shown around the pin
-  const TARGET_ACCURACY_M = 50;       // stop early once GPS is at least this precise
+  const TARGET_ACCURACY_M = 20;       // stop early once GPS is at least this precise (tighter than before)
   const MAX_ACQUIRE_MS = 15000;       // give up waiting for a better fix after this long
 
   function geoStatusText(){
     if(!pendingAddrCoords) return '';
     if(detManuallyAdjusted){
-      return `<span class="geo-dot"></span> Pin adjusted manually &middot; ${ADDRESS_RADIUS_METERS}m delivery radius shown below`;
+      return `<span class="geo-dot"></span> Delivery pin adjusted manually &middot; blue dot shows your actual GPS location &middot; ${ADDRESS_RADIUS_METERS}m delivery radius shown below`;
     }
     const acc = Math.round(pendingAddrCoords.accuracy || 0);
     const d = pendingAddrCoords.geo || {};
     const dirNote = d.landmarkDir ? ` &middot; ${d.landmarkDir}` : '';
     const pinNote = d.pincode ? ` &middot; PIN ${d.pincode}` : '';
-    return `<span class="geo-dot"></span> Live location captured (\u00b1${acc}m GPS accuracy)${dirNote}${pinNote} &middot; ${ADDRESS_RADIUS_METERS}m delivery radius shown below &mdash; drag the map to fine-tune`;
+    return `<span class="geo-dot"></span> Live location captured (\u00b1${acc}m GPS accuracy)${dirNote}${pinNote} &mdash; drag the map to fine-tune the exact spot`;
   }
   function refreshGeoStatus(){
     if(!pendingAddrCoords) return;
@@ -1117,18 +1122,41 @@
     detGeoStatus.innerHTML = geoStatusText();
   }
 
-  function renderGeoMap(lat, lng){
+  function renderGeoMap(lat, lng, accuracyMeters){
     detGeoMapWrap.style.display = 'block';
     if(!window.L){
       // Leaflet failed to load (offline/blocked) — status text above still shows accuracy.
       return;
     }
     if(!detLeafletMap){
-      detLeafletMap = L.map(detGeoMap, { zoomControl:false, attributionControl:true }).setView([lat, lng], 17);
+      detLeafletMap = L.map(detGeoMap, { zoomControl:false, attributionControl:true }).setView([lat, lng], 18);
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
         attribution: '&copy; OpenStreetMap'
       }).addTo(detLeafletMap);
+
+      // Blue "you are here" marker — same visual language as Google Maps'
+      // live-location dot: a translucent accuracy ring sized to the ACTUAL
+      // GPS accuracy reading, plus a solid blue dot with a white halo at
+      // the exact raw fix. This stays pinned to the real GPS coordinate
+      // and does NOT move when the user drags the map to adjust the
+      // delivery pin — it's a reference point, not the selection.
+      detLeafletAccuracyRing = L.circle([lat, lng], {
+        radius: accuracyMeters || 30,
+        color: '#4285F4',
+        fillColor: '#4285F4',
+        fillOpacity: 0.12,
+        weight: 1,
+        interactive: false
+      }).addTo(detLeafletMap);
+      detLeafletAccuracyDot = L.marker([lat, lng], {
+        icon: L.divIcon({ className: '', html: '<div class="gps-blue-dot"></div>', iconSize: [18, 18], iconAnchor: [9, 9] }),
+        interactive: false,
+        zIndexOffset: 500
+      }).addTo(detLeafletMap);
+
+      // Green delivery-radius circle tracks the ADJUSTABLE pin (map center),
+      // separate from the blue GPS dot above.
       detLeafletCircle = L.circle([lat, lng], {
         radius: ADDRESS_RADIUS_METERS,
         color: '#4CAF6D',
@@ -1155,8 +1183,13 @@
         refreshGeoStatus();
       });
     } else {
-      detLeafletMap.setView([lat, lng], 17);
+      detLeafletMap.setView([lat, lng], 18);
       detLeafletCircle.setLatLng([lat, lng]);
+      if(detLeafletAccuracyDot) detLeafletAccuracyDot.setLatLng([lat, lng]);
+      if(detLeafletAccuracyRing){
+        detLeafletAccuracyRing.setLatLng([lat, lng]);
+        detLeafletAccuracyRing.setRadius(accuracyMeters || 30);
+      }
     }
     setTimeout(()=> detLeafletMap.invalidateSize(), 150);
   }
@@ -1168,7 +1201,7 @@
       pendingAddrCoords.lat = detCapturedGPS.lat;
       pendingAddrCoords.lng = detCapturedGPS.lng;
     }
-    detLeafletMap.setView([detCapturedGPS.lat, detCapturedGPS.lng], 17);
+    detLeafletMap.setView([detCapturedGPS.lat, detCapturedGPS.lng], 18);
     detLeafletCircle.setLatLng([detCapturedGPS.lat, detCapturedGPS.lng]);
     refreshGeoStatus();
     showToast('Pin reset to your GPS location');
@@ -1210,10 +1243,10 @@
         return;
       }
 
-      detCapturedGPS = { lat: best.lat, lng: best.lng };
+      detCapturedGPS = { lat: best.lat, lng: best.lng, accuracy: best.accuracy };
       pendingAddrCoords = { lat: best.lat, lng: best.lng, accuracy: best.accuracy, radius: ADDRESS_RADIUS_METERS };
       refreshGeoStatus();
-      renderGeoMap(best.lat, best.lng);
+      renderGeoMap(best.lat, best.lng, best.accuracy);
       document.getElementById('newAddrBuilding').focus();
 
       // Pre-fill the exact street/colony/area/city/pincode text; house
@@ -2626,6 +2659,32 @@
 
   let trackMap = null, riderMarker = null, homeMarker = null, riderIcon = null, homeIcon = null;
   let trackFeedTimer = null, trackRouteIdx = 0, trackRoute = [];
+  let myLiveMarker = null, myWatchId = null; // customer's own live GPS blue dot on the track screen
+
+  // Shows the customer's OWN live GPS position on the tracking map (the
+  // same Google-Maps-style blue dot used on the address picker) so they
+  // can see the rider approaching relative to where they actually are
+  // right now — not just their saved/typed delivery address pin.
+  function startMyLiveLocation(){
+    if(!navigator.geolocation || !trackMap) return;
+    if(myWatchId !== null) return; // already watching
+    myWatchId = navigator.geolocation.watchPosition((pos)=>{
+      const { latitude, longitude } = pos.coords;
+      if(!myLiveMarker){
+        myLiveMarker = L.marker([latitude, longitude], {
+          icon: L.divIcon({ className:'', html:'<div class="gps-blue-dot"></div>', iconSize:[18,18], iconAnchor:[9,9] }),
+          interactive:false, zIndexOffset:400
+        }).addTo(trackMap);
+      } else {
+        myLiveMarker.setLatLng([latitude, longitude]);
+      }
+    }, ()=>{ /* permission denied / unavailable — silently skip, rider tracking still works without it */ },
+    { enableHighAccuracy:true, maximumAge:5000 });
+  }
+  function stopMyLiveLocation(){
+    if(myWatchId !== null){ navigator.geolocation.clearWatch(myWatchId); myWatchId = null; }
+  }
+  window.stopMyLiveLocation = stopMyLiveLocation;
 
   function initTrackMap(startLatLng, endLatLng){
     const el = document.getElementById('trackMap');
@@ -2640,6 +2699,7 @@
 
       homeMarker = L.marker(endLatLng, { icon: homeIcon }).addTo(trackMap);
       riderMarker = L.marker(startLatLng, { icon: riderIcon }).addTo(trackMap);
+      startMyLiveLocation();
     } else {
       homeMarker.setLatLng(endLatLng);
       riderMarker.setLatLng(startLatLng);
