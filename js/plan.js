@@ -18,8 +18,20 @@
 import { plansApi, API_BASE } from './api.js';
 import { onSocket } from './socket.js';
 
+const CACHE_KEY = 'pd_cache_plans';
+
 let allPlans = [];
 let onAddPlan = null; // injected by app-init.js, same pattern as products' onAdd
+
+function loadCachedPlans() {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) { return []; }
+}
+function saveCachedPlans(list) {
+  try { localStorage.setItem(CACHE_KEY, JSON.stringify(list)); } catch (e) { /* storage unavailable */ }
+}
 
 const DROP_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C8 8 5 11.5 5 15a7 7 0 0 0 14 0c0-3.5-3-7-7-13Z"/></svg>';
 const CHECK_ICON = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
@@ -87,7 +99,10 @@ function planBtnHtml(p) {
     return `<button class="pkg-btn pkg-btn-added" disabled data-id="${p._id}">${CHECK_ICON} Added</button>`;
   }
   if (inCart) {
-    return `<button class="pkg-btn pkg-btn-subscribed" data-id="${p._id}" data-name="${p.name}" data-price="${p.price}">${CHECK_ICON} Subscribed</button>`;
+    // Already subscribed - button is disabled so tapping it again can't add
+    // a second/duplicate line for the same plan. It only becomes tappable
+    // ("Subscribe") again once fully removed from the cart (qty 0).
+    return `<button class="pkg-btn pkg-btn-subscribed" disabled data-id="${p._id}">${CHECK_ICON} Subscribed</button>`;
   }
   return `<button class="pkg-btn" data-id="${p._id}" data-name="${p.name}" data-price="${p.price}">Subscribe</button>`;
 }
@@ -201,10 +216,11 @@ async function loadPlans() {
   try {
     allPlans = await plansApi.list();
     if (!Array.isArray(allPlans) || !allPlans.length) allPlans = DEMO_PLANS;
+    else saveCachedPlans(allPlans);
     renderRail();
   } catch (err) {
     console.warn('[plans] backend not reachable yet, showing demo preview:', err.message);
-    allPlans = DEMO_PLANS;
+    if (!allPlans.length) allPlans = DEMO_PLANS;
     renderRail();
   }
 }
@@ -212,6 +228,15 @@ async function loadPlans() {
 // Called once from app-init.js after DOM is ready.
 export function initPlans({ onAdd }) {
   onAddPlan = onAdd;
+
+  // Show last-known plans immediately (no blank rail while waiting on the
+  // network), then loadPlans() below refreshes silently in the background.
+  const cached = loadCachedPlans();
+  if (cached.length) {
+    allPlans = cached;
+    renderRail();
+  }
+
   loadPlans();
 
   onSocket('catalog:changed', ({ kind }) => {
