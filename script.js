@@ -264,19 +264,9 @@
     });
   });
 
-  document.querySelectorAll('.pkg-btn[data-name]').forEach(btn=>{
-    btn.addEventListener('click', (e)=>{
-      e.stopPropagation();
-      const name = btn.dataset.name;
-      const price = parseFloat(btn.dataset.price || '0');
-      addToCart(name, price);
-      flyToCart(btn);
-      const original = btn.textContent;
-      btn.textContent = 'Added ✓';
-      btn.classList.add('add-pop');
-      setTimeout(()=>{ btn.textContent = original; btn.classList.remove('add-pop'); }, 900);
-    });
-  });
+  // Note: "Subscribe" buttons on the package cards are rendered dynamically
+  // by js/plans.js (live from the backend/admin), so they're wired up there
+  // via app-init.js's initPlans({ onAdd }) instead of a static query here.
 
   renderCart();
 
