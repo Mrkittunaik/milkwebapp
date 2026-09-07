@@ -391,6 +391,21 @@
     display:flex; align-items:center; justify-content:center; color:#231C08; cursor:pointer; flex-shrink:0;
   }
 
+  /* Brief "Added ✓" confirmation shown right after the first tap, before
+     settling into the persistent -/qty/+ stepper. */
+  .prod-added{
+    display:flex; align-items:center; gap:4px; padding:0 10px; height:26px; border-radius:6px;
+    background:var(--green); border:none; color:#fff; font-size:10.5px; font-weight:800;
+    flex-shrink:0; white-space:nowrap; cursor:default;
+    animation:addedPopIn .25s cubic-bezier(.3,1.4,.5,1);
+  }
+  .prod-added svg{flex-shrink:0;}
+  @keyframes addedPopIn{
+    0%{transform:scale(.5); opacity:0;}
+    60%{transform:scale(1.1); opacity:1;}
+    100%{transform:scale(1);}
+  }
+
   /* Live +/qty/- stepper that replaces .prod-add once an item is in the cart */
   .prod-stepper{
     display:flex; align-items:center; gap:0; background:var(--yellow); border-radius:6px;
