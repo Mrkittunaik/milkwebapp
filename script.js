@@ -2568,3 +2568,56 @@
     }, tickMs);
   }
   window.beginLiveTracking = beginLiveTracking; // callable once a real order:outForDelivery event fires
+
+/* =========================================================
+   TOP NAV SEARCH: expands smoothly from the search icon
+   (replaces the old permanent search bar). Auto-focuses on
+   open, auto-collapses on outside click / blur when empty.
+========================================================= */
+document.addEventListener('DOMContentLoaded', () => {
+  const wrap = document.getElementById('navSearchWrap');
+  const btn = document.getElementById('navSearchBtn');
+  const input = document.getElementById('navSearchInput');
+  const closeBtn = document.getElementById('navSearchCloseBtn');
+  if (!wrap || !btn || !input) return;
+
+  function openSearch() {
+    wrap.classList.add('open');
+    setTimeout(() => input.focus(), 220); // wait for expand animation
+  }
+  function closeSearch() {
+    wrap.classList.remove('open');
+    input.blur();
+  }
+
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    openSearch();
+  });
+
+  closeBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    input.value = '';
+    closeSearch();
+  });
+
+  input.addEventListener('blur', () => {
+    // small delay so a tap on the close button still registers first
+    setTimeout(() => {
+      if (!input.value.trim()) closeSearch();
+    }, 120);
+  });
+
+  document.addEventListener('click', (e) => {
+    if (wrap.classList.contains('open') && !wrap.contains(e.target)) {
+      if (!input.value.trim()) closeSearch();
+    }
+  });
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      input.value = '';
+      closeSearch();
+    }
+  });
+});
