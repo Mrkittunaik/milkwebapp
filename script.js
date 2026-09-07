@@ -173,9 +173,9 @@
             <div class="cart-item-price">₹${item.price} &times; ${item.qty}</div>
           </div>
           <div class="cart-item-qty">
-            <button data-act="dec" data-key="${item.name}">−</button>
+            <button data-act="dec" data-key="${item.key}">−</button>
             <span>${item.qty}</span>
-            <button data-act="inc" data-key="${item.name}">+</button>
+            <button data-act="inc" data-key="${item.key}">+</button>
           </div>`;
         list.appendChild(row);
       });
@@ -213,18 +213,24 @@
   }
 
   function addToCart(name, price, id){
-    if(!cart[name]) cart[name] = {name, price, id: id || null, qty:0};
-    cart[name].qty++;
+    // Key by product id when we have one (real backend products) so two
+    // different products that happen to share a display name (e.g. two
+    // "Gee" entries) never collide into the same cart line. Legacy static
+    // demo buttons with no id still fall back to name.
+    const key = id || name;
+    if(!cart[key]) cart[key] = {key, name, price, id: id || null, qty:0};
+    cart[key].qty++;
     renderCart();
   }
   window.addToCart = addToCart; // exposed for js/app-init.js's real product "+" buttons
 
-  // Removes one unit of a cart item by name (used by the product card
-  // stepper's "-" button). Deletes the line entirely once qty hits 0.
-  function decrementCartItem(name){
-    if(!cart[name]) return;
-    cart[name].qty--;
-    if(cart[name].qty <= 0) delete cart[name];
+  // Removes one unit of a cart item by id (falls back to name for legacy
+  // items). Deletes the line entirely once qty hits 0.
+  function decrementCartItem(idOrName){
+    const key = idOrName;
+    if(!cart[key]) return;
+    cart[key].qty--;
+    if(cart[key].qty <= 0) delete cart[key];
     renderCart();
   }
   window.decrementCartItem = decrementCartItem;
@@ -271,8 +277,8 @@
       const name = btn.dataset.name;
       const price = parseFloat(btn.dataset.price || '0');
       if(name){
-        addToCart(name, price);
         flyToCart(btn);
+        addToCart(name, price);
         btn.classList.add('add-pop');
         setTimeout(()=> btn.classList.remove('add-pop'), 300);
       }
@@ -406,8 +412,8 @@
     grid.querySelectorAll('.prod-add').forEach(btn=>{
       btn.addEventListener('click', (e)=>{
         e.stopPropagation();
-        addToCart(btn.dataset.name, parseFloat(btn.dataset.price||'0'));
         flyToCart(btn);
+        addToCart(btn.dataset.name, parseFloat(btn.dataset.price||'0'));
         showToast(btn.dataset.name + ' added to cart');
       });
     });
