@@ -275,35 +275,54 @@
   .promo-placeholder-svg{position:absolute; inset:0; width:100%; height:100%; z-index:0;}
   .promo-card.promo-placeholder .promo-copy{position:relative; z-index:1;}
 
-  /* ---------- PACKAGE / PLAN CARDS ---------- */
-  .pkg-grid{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
+  /* ---------- PACKAGE / PLAN CARDS (horizontal scroll rail) ---------- */
+  .pkg-rail-outer{position:relative;}
+  .pkg-rail{
+    display:flex; gap:12px; overflow-x:auto; scroll-snap-type:x mandatory;
+    padding:2px 2px 6px; margin:0 -2px;
+    -webkit-overflow-scrolling:touch; scrollbar-width:none;
+  }
+  .pkg-rail::-webkit-scrollbar{display:none;}
   .pkg-card{
+    flex:0 0 76%; max-width:280px; scroll-snap-align:start;
     background:var(--card); border:1px solid var(--line); border-radius:var(--radius);
-    padding:16px 14px; position:relative; overflow:hidden;
-    box-shadow:0 2px 10px rgba(43,36,16,.05);
+    overflow:hidden; position:relative;
+    box-shadow:0 2px 10px rgba(43,36,16,.06);
+    display:flex; flex-direction:column;
   }
-  .pkg-card.featured{
-    background:linear-gradient(155deg,#1E1806,#2E2410);
-    border-color:transparent; color:#fff;
+  .pkg-card.featured{border-color:transparent;}
+
+  /* Top half: image (or gradient fallback if a plan has none yet) */
+  .pkg-thumb{
+    position:relative; width:100%; aspect-ratio:4/3; overflow:hidden;
+    background:linear-gradient(155deg,#EFE6C4,#E4D6A0);
   }
+  .pkg-thumb img{width:100%; height:100%; object-fit:cover; display:block;}
+  .pkg-thumb-fallback{width:100%; height:100%; display:flex; align-items:center; justify-content:center; color:#B8A667;}
   .pkg-tag{
+    position:absolute; top:10px; left:10px; z-index:1;
     display:inline-flex; font-size:9.5px; font-weight:800; letter-spacing:.4px; text-transform:uppercase;
-    background:var(--green-light); color:var(--green-dim); padding:4px 8px; border-radius:5px; margin-bottom:10px;
+    background:rgba(255,255,255,.92); color:var(--green-dim); padding:4px 8px; border-radius:5px;
   }
-  .pkg-card.featured .pkg-tag{background:rgba(253,194,2,.18); color:var(--yellow);}
-  .pkg-name{font-size:14.5px; font-weight:800; margin-bottom:2px;}
-  .pkg-desc{font-size:11px; color:var(--muted); line-height:1.4; margin-bottom:12px;}
-  .pkg-card.featured .pkg-desc{color:#C9C2AC;}
-  .pkg-price{font-size:19px; font-weight:800;}
+  .pkg-card.featured .pkg-tag{background:var(--yellow); color:#231C08;}
+  .pkg-drop{position:absolute; top:10px; right:10px; z-index:1; color:#fff; filter:drop-shadow(0 1px 3px rgba(0,0,0,.35));}
+
+  /* Bottom half: info panel */
+  .pkg-body{padding:12px 14px 14px; flex:1; display:flex; flex-direction:column;}
+  .pkg-name{font-size:14.5px; font-weight:800; margin-bottom:2px; color:var(--ink);}
+  .pkg-desc{font-size:11px; color:var(--muted); line-height:1.4; margin-bottom:12px; flex:1;}
+  .pkg-price{font-size:19px; font-weight:800; color:var(--ink);}
   .pkg-price span{font-size:11px; font-weight:600; color:var(--muted);}
-  .pkg-card.featured .pkg-price span{color:#A69C7E;}
   .pkg-btn{
     margin-top:12px; width:100%; padding:9px; border-radius:5px; border:none;
     background:var(--yellow); color:#231C08; font-weight:800; font-size:12.5px; cursor:pointer;
   }
-  .pkg-card.featured .pkg-btn{background:var(--green);color:#fff;}
-  .pkg-drop{position:absolute; top:14px; right:14px; color:#D9CDA0;}
-  .pkg-card.featured .pkg-drop{color:rgba(255,255,255,.15);}
+  .pkg-card.featured .pkg-btn{background:var(--green); color:#fff;}
+
+  .pkg-dots{display:flex; justify-content:center; gap:5px; margin-top:8px;}
+  .pkg-dots span{width:5px; height:5px; border-radius:50%; background:var(--line);}
+  .pkg-dots span.active{background:var(--green); width:14px; border-radius:3px;}
+  .pkg-empty{padding:24px 4px; text-align:center; color:var(--muted); font-size:12.5px;}
 
   /* ---------- PRODUCT CARDS RAIL ---------- */
   .prod-rail-outer{overflow:hidden; margin:0 -18px; padding:0 18px;}
