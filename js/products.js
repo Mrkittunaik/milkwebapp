@@ -25,6 +25,27 @@ const CATEGORY_ICONS = {
 };
 const FAV_ICON = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8Z"/></svg>';
 
+// Looks up the live quantity of a product currently in the cart (script.js's
+// window.cart, keyed by product name) so cards can show a live +/qty/- stepper
+// instead of a static "+" once something has been added.
+function cartQtyFor(p) {
+  const entry = window.cart && window.cart[p.name];
+  return entry ? entry.qty : 0;
+}
+
+function addBtnHtml(p, outOfStock) {
+  const qty = cartQtyFor(p);
+  if (qty > 0) {
+    return `
+      <div class="prod-stepper" data-id="${p._id}" data-name="${p.name}" data-price="${p.price}">
+        <button class="prod-step-btn" data-step="dec" aria-label="Remove one">&minus;</button>
+        <span class="prod-step-qty">${qty}</span>
+        <button class="prod-step-btn" data-step="inc" aria-label="Add one" ${outOfStock ? 'disabled' : ''}>+</button>
+      </div>`;
+  }
+  return `<button class="prod-add" data-id="${p._id}" data-name="${p.name}" data-price="${p.price}" ${outOfStock ? 'disabled' : ''}>+</button>`;
+}
+
 function resolveImageUrl(url) {
   if (!url) return null;
   return /^https?:\/\//i.test(url) ? url : `${API_BASE}${url}`;
@@ -119,7 +140,7 @@ function productCardHtml(p) {
         <div class="prod-meta">${p.unit}${p.desc ? ' &middot; ' + p.desc : ''}</div>
         <div class="prod-bottom">
           <div class="prod-price">${discountPct > 0 ? `<s>₹${p.mrp}</s>` : ''}₹${p.price}</div>
-          <button class="prod-add" data-id="${p._id}" data-name="${p.name}" data-price="${p.price}" ${outOfStock ? 'disabled' : ''}>+</button>
+          ${addBtnHtml(p, outOfStock)}
         </div>
       </div>
     </div>`;
@@ -141,7 +162,7 @@ function productRailCardHtml(p) {
         <div class="prod-meta">${p.unit}${p.desc ? ' &middot; ' + p.desc : ''}</div>
         <div class="prod-bottom">
           <div class="prod-price">${discountPct > 0 ? `<s>₹${p.mrp}</s>` : ''}₹${p.price}</div>
-          <button class="prod-add" data-id="${p._id}" data-name="${p.name}" data-price="${p.price}">+</button>
+          ${addBtnHtml(p, !p.available || p.stock <= 0)}
         </div>
       </div>
     </div>`;
@@ -163,6 +184,7 @@ function renderHomeFeaturedRail() {
       if (typeof onAddToCart === 'function') onAddToCart({ id, name, price: Number(price) }, btn);
     });
   });
+  wireSteppers(rail);
 }
 
 function renderGrid() {
@@ -181,6 +203,30 @@ function renderGrid() {
       if (btn.disabled) return;
       const { id, name, price } = btn.dataset;
       if (typeof onAddToCart === 'function') onAddToCart({ id, name, price: Number(price) }, btn);
+    });
+  });
+  wireSteppers(grid);
+}
+
+// Wires the -/qty/+ stepper controls that replace the "+" button once an
+// item is already in the cart. "+" adds another (with fly animation),
+// "-" removes one - both go through the same onAddToCart/window.cart flow
+// so script.js's cart stays the single source of truth.
+function wireSteppers(container) {
+  container.querySelectorAll('.prod-stepper').forEach(stepper => {
+    const { id, name, price } = stepper.dataset;
+    const incBtn = stepper.querySelector('[data-step="inc"]');
+    const decBtn = stepper.querySelector('[data-step="dec"]');
+
+    incBtn?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (incBtn.disabled) return;
+      if (typeof onAddToCart === 'function') onAddToCart({ id, name, price: Number(price) }, incBtn);
+    });
+
+    decBtn?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (typeof window.decrementCartItem === 'function') window.decrementCartItem(name);
     });
   });
 }
@@ -212,6 +258,14 @@ export function initProducts({ onAdd }) {
       renderGrid();
     });
   });
+
+  // Cart changed (add/remove/qty change from anywhere - cards, cart screen,
+  // etc.) -> re-render cards from the already-fetched list so each card's
+  // +/qty/- stepper reflects the live cart count, no refetch needed.
+  window.onCartChanged = () => {
+    renderGrid();
+    renderHomeFeaturedRail();
+  };
 
   // Live update: admin adds/edits/deletes/restocks a product -> re-render
   // instantly, no reload. kind is 'product' for this event; other kinds
