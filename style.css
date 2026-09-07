@@ -162,8 +162,8 @@
     transition:all .15s;
   }
   .cat-chip.active{background:var(--yellow); color:#231C08; border-color:transparent;}
-  .prod-grid{display:grid; grid-template-columns:1fr 1fr; gap:13px;}
-  .prod-card.grid{width:auto;}
+  .prod-grid{display:grid; grid-template-columns:1fr 1fr; gap:11px;}
+  .prod-card.grid{width:auto; transform:scale(.96); transform-origin:top center;}
   .prod-card.hidden{display:none;}
 
   /* ---------- CART / ORDERS SCREEN ---------- */
@@ -178,8 +178,19 @@
   .cart-item-name{font-size:13px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   .cart-item-price{font-size:12px; color:var(--muted); margin-top:2px;}
   .cart-item-qty{display:flex; align-items:center; gap:8px; background:var(--card-hi); border-radius:5px; padding:4px 6px;}
-  .cart-item-qty button{width:20px; height:20px; border-radius:5px; border:none; background:#fff; color:var(--ink); font-weight:800; cursor:pointer; box-shadow:0 1px 3px rgba(0,0,0,.08);}
-  .cart-item-qty span{font-size:12.5px; font-weight:700; min-width:14px; text-align:center;}
+  .cart-item-qty button{width:20px; height:20px; border-radius:5px; border:none; background:#fff; color:var(--ink); font-weight:800; cursor:pointer; box-shadow:0 1px 3px rgba(0,0,0,.08); transition:transform .12s;}
+  .cart-item-qty button:active{ transform:scale(.85); }
+  .cart-item-qty span{font-size:12.5px; font-weight:700; min-width:14px; text-align:center; display:inline-block;}
+  /* Qty number pulse on +/- instead of re-animating/blinking the whole card */
+  .cart-qty-num.qty-bump{ animation:qtyBump .28s ease; }
+  @keyframes qtyBump{
+    0%{ transform:scale(1); }
+    45%{ transform:scale(1.35); color:var(--green-dim); }
+    100%{ transform:scale(1); }
+  }
+  /* Row removal (qty hits 0) - fade/shrink out instead of an abrupt disappear */
+  .cart-item-out{ animation:cartItemOut .18s ease forwards; }
+  @keyframes cartItemOut{ from{opacity:1; transform:translateX(0);} to{opacity:0; transform:translateX(-8px);} }
   .cart-empty{display:flex; flex-direction:column; align-items:center; text-align:center; padding:40px 20px; gap:10px;}
   .cart-empty-title{font-size:14.5px; font-weight:800; color:var(--ink);}
   .cart-empty-sub{font-size:12px; color:var(--muted); max-width:220px; line-height:1.4;}
@@ -293,20 +304,30 @@
   .promo-placeholder-svg{position:absolute; inset:0; width:100%; height:100%; z-index:0;}
   .promo-card.promo-placeholder .promo-copy{position:relative; z-index:1;}
 
-  /* ---------- PACKAGE / PLAN CARDS (horizontal scroll rail) ---------- */
+  /* ---------- PACKAGE / PLAN CARDS (horizontal scroll rail) ----------
+     Center-focused carousel: the card in the middle of the viewport is
+     shown big/full-opacity, the cards peeking in on either side are
+     scaled down and dimmed - like a coverflow. JS (plan.js) toggles
+     .is-active on whichever card is currently centered as you scroll. */
   .pkg-rail-outer{position:relative;}
   .pkg-rail{
-    display:flex; gap:12px; overflow-x:auto; scroll-snap-type:x mandatory;
-    padding:2px 2px 6px; margin:0 -2px;
+    display:flex; align-items:center; gap:12px; overflow-x:auto; scroll-snap-type:x mandatory;
+    padding:14px 22% 10px; margin:0 -2px;
     -webkit-overflow-scrolling:touch; scrollbar-width:none;
   }
   .pkg-rail::-webkit-scrollbar{display:none;}
   .pkg-card{
-    flex:0 0 76%; max-width:280px; scroll-snap-align:start;
+    flex:0 0 76%; max-width:280px; scroll-snap-align:center;
     background:var(--card); border:1px solid var(--line); border-radius:var(--radius);
     overflow:hidden; position:relative;
     box-shadow:0 2px 10px rgba(43,36,16,.06);
     display:flex; flex-direction:column;
+    transform:scale(.86); opacity:.55;
+    transition:transform .28s cubic-bezier(.25,.8,.4,1), opacity .28s ease;
+  }
+  .pkg-card.is-active{
+    transform:scale(1); opacity:1;
+    box-shadow:0 8px 22px rgba(43,36,16,.14);
   }
   .pkg-card.featured{border-color:transparent;}
 
@@ -336,6 +357,17 @@
     background:var(--yellow); color:#231C08; font-weight:800; font-size:12.5px; cursor:pointer;
   }
   .pkg-card.featured .pkg-btn{background:var(--green); color:#fff;}
+  /* Brief "Added ✓" pop right after Subscribe is tapped */
+  .pkg-btn-added{
+    background:var(--green) !important; color:#fff !important; display:flex; align-items:center;
+    justify-content:center; gap:5px; cursor:default; animation:addedPopIn .25s cubic-bezier(.3,1.4,.5,1);
+  }
+  /* Persistent "Subscribed" state once the plan is actually in the cart -
+     stays until it's removed from the cart, per this account/session. */
+  .pkg-btn-subscribed{
+    background:var(--green-light) !important; color:var(--green-dim) !important;
+    display:flex; align-items:center; justify-content:center; gap:5px; border:1px solid var(--green-dim);
+  }
 
   .pkg-dots{display:flex; justify-content:center; gap:5px; margin-top:8px;}
   .pkg-dots span{width:5px; height:5px; border-radius:50%; background:var(--line);}
@@ -347,7 +379,7 @@
   .prod-rail{display:flex; gap:13px; overflow-x:auto; scrollbar-width:none; padding-bottom:4px;}
   .prod-rail::-webkit-scrollbar{display:none;}
   .prod-card{
-    flex:0 0 auto; width:148px; background:var(--card); border:1px solid var(--line);
+    flex:0 0 auto; width:164px; background:var(--card); border:1px solid var(--line);
     border-radius:var(--radius); overflow:hidden; box-shadow:0 2px 10px rgba(43,36,16,.05);
     transition:transform .15s;
   }
