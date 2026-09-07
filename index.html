@@ -442,6 +442,29 @@
     </div>
   </div>
 
+  <!-- PAYMENT METHODS SCREEN -->
+  <div class="screen" id="screen-paymethods">
+    <div class="screen-header-row" style="margin-top:2px;">
+      <div class="back-btn" data-goto="account">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+      </div>
+      <div class="section-title" style="margin:0;">Payment <span>Methods</span></div>
+    </div>
+
+    <!-- Populated from past paid orders' method field (script.js
+         renderPaymentMethodsScreen()). Empty state shown if the user
+         has never completed a paid order yet. -->
+    <div id="payMethodsList"></div>
+
+    <div class="sub-empty" id="payMethodsEmpty" style="display:none;">
+      <div class="sub-empty-ic">
+        <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="1.6"><rect x="2" y="5" width="20" height="14" rx="3"/><path d="M2 10h20"/></svg>
+      </div>
+      <div class="sub-empty-title">No saved payment methods</div>
+      <div class="sub-empty-sub">Once you complete an order, the payment method you used will be saved here for next time.</div>
+    </div>
+  </div>
+
   <!-- ORDERS / PAYMENT HISTORY SCREEN -->
   <div class="screen" id="screen-orders">
     <div class="section-head" style="margin-top:2px;">
@@ -570,9 +593,9 @@
     <div class="settings-group" id="accountSettingsGroup">
       <div class="settings-row"><div class="settings-row-label">Home &middot; Kittu Nagar</div><div class="settings-row-sub">Delivery address</div></div>
       <div class="settings-row" id="manageSubRow" data-goto="subscription"><div class="settings-row-label">Manage Subscriptions</div></div>
-      <div class="settings-row"><div class="settings-row-label">Payment Methods</div></div>
-      <div class="settings-row"><div class="settings-row-label">Order History</div></div>
-      <div class="settings-row"><div class="settings-row-label">Help &amp; Support</div></div>
+      <div class="settings-row" id="paymentMethodsRow" data-goto="paymethods"><div class="settings-row-label">Payment Methods</div></div>
+      <div class="settings-row" id="orderHistoryRow" data-goto="orders"><div class="settings-row-label">Order History</div></div>
+      <div class="settings-row" id="helpSupportRow" data-goto="orders"><div class="settings-row-label">Help &amp; Support</div></div>
       <div class="settings-row" id="accountLogoutRow"><div class="settings-row-label" style="color:var(--danger);">Log Out</div></div>
     </div>
   </div>
@@ -590,6 +613,19 @@
       <div style="font-size:12px; color:var(--muted);">Your active daily milk plan</div>
     </div>
 
+    <!-- EMPTY STATE: shown when the user has no active plan/subscription
+         yet. The mock calendar/plan-card block below stays hidden until
+         hasActiveSubscription() (script.js) says otherwise. -->
+    <div class="sub-empty" id="subEmptyState" style="display:none;">
+      <div class="sub-empty-ic">
+        <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="1.6"><path d="M8 2h8M9 2v5.2a3 3 0 0 1-.6 1.8L6 12.4A4 4 0 0 0 5 15v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5a4 4 0 0 0-1-2.6l-2.4-3.4A3 3 0 0 1 15 7.2V2"/></svg>
+      </div>
+      <div class="sub-empty-title">No active subscription</div>
+      <div class="sub-empty-sub">Subscribe to a daily/weekly milk package to see delivery calendar, skip options and renewal here.</div>
+      <button class="success-cta" id="subEmptyBrowseBtn" style="margin-top:14px;">Browse Packages</button>
+    </div>
+
+    <div id="subActiveContent">
     <div class="sub-plan-card" id="subPlanCard">
       <div class="sub-plan-name" id="subPlanName">Family Pack &middot; Monthly</div>
       <div class="sub-plan-sub" id="subPlanSub">1 Litre every morning &middot; renews on <span id="subRenewDate">30 Sep</span></div>
@@ -625,6 +661,7 @@
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--yellow-deep)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
       <span>Skip requests for tomorrow must be made before <b>10:00 PM tonight</b>. After that, tomorrow's delivery is locked.</span>
     </div>
+    </div><!-- /subActiveContent -->
 
     <!-- Day adjust bottom sheet -->
     <div class="sheet-backdrop" id="adjustSheetBackdrop">
