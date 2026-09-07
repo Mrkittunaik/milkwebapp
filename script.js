@@ -1,5 +1,6 @@
 // ---- App state ----
   const cart = {}; // name -> {name, price, qty}
+  window.cart = cart; // exposed read-only for live qty display on product cards
 
   // ---- Auth/session state (hoisted so nav/checkout gating can use it) ----
   const SESSION_STORAGE_KEY = 'pd_user_session';
@@ -207,6 +208,8 @@
         renderCart();
       });
     });
+
+    if (typeof window.onCartChanged === 'function') window.onCartChanged();
   }
 
   function addToCart(name, price, id){
@@ -214,11 +217,20 @@
     cart[name].qty++;
     renderCart();
   }
-
   window.addToCart = addToCart; // exposed for js/app-init.js's real product "+" buttons
+
+  // Removes one unit of a cart item by name (used by the product card
+  // stepper's "-" button). Deletes the line entirely once qty hits 0.
+  function decrementCartItem(name){
+    if(!cart[name]) return;
+    cart[name].qty--;
+    if(cart[name].qty <= 0) delete cart[name];
+    renderCart();
+  }
+  window.decrementCartItem = decrementCartItem;
   // ---- Fly-to-cart animation ----
   function flyToCart(sourceEl){
-    const cartTarget = document.querySelector('.icon-btn[aria-label="Cart"]');
+    const cartTarget = document.getElementById('navFab');
     if(!cartTarget) return;
     const start = sourceEl.getBoundingClientRect();
     const end = cartTarget.getBoundingClientRect();
@@ -230,22 +242,25 @@
     dot.style.height = size + 'px';
     dot.style.left = (start.left + start.width/2 - size/2) + 'px';
     dot.style.top = (start.top + start.height/2 - size/2) + 'px';
-    dot.style.transition = 'transform .55s cubic-bezier(.2,.8,.3,1), opacity .55s ease';
     document.body.appendChild(dot);
 
     const dx = (end.left + end.width/2) - (start.left + start.width/2);
     const dy = (end.top + end.height/2) - (start.top + start.height/2);
+    // Arc upward slightly before dropping down into the cart, rather than a flat line.
+    const midX = dx * 0.5;
+    const midY = dy * 0.5 - Math.max(60, Math.abs(dy) * 0.35);
 
-    requestAnimationFrame(()=>{
-      dot.style.transform = `translate(${dx}px, ${dy}px) scale(.3)`;
-      dot.style.opacity = '0.2';
-    });
+    const anim = dot.animate([
+      { transform: 'translate(0px, 0px) scale(1)', opacity: 1, offset: 0 },
+      { transform: `translate(${midX}px, ${midY}px) scale(.85)`, opacity: 1, offset: 0.55 },
+      { transform: `translate(${dx}px, ${dy}px) scale(.25)`, opacity: 0.15, offset: 1 }
+    ], { duration: 620, easing: 'cubic-bezier(.3,.6,.2,1)', fill: 'forwards' });
 
-    setTimeout(()=>{
+    anim.onfinish = () => {
       dot.remove();
       cartTarget.classList.add('cart-pulse');
       setTimeout(()=> cartTarget.classList.remove('cart-pulse'), 400);
-    }, 550);
+    };
   }
   window.flyToCart = flyToCart; // exposed for js/app-init.js's real product "+" buttons
 
