@@ -11,9 +11,24 @@
 import { productsApi, API_BASE } from './api.js';
 import { onSocket } from './socket.js';
 
+const CACHE_KEY = 'pd_cache_products';
+
 let allProducts = [];      // last fetched list, kept fresh by socket events
 let currentFilter = 'all';
 let onAddToCart = null;    // injected by script.js so cart logic stays in one place
+
+// Reads whatever was fetched last time (from a previous visit) so the grid
+// can render immediately on load instead of showing empty until the network
+// call finishes - the "loads blank, then pops in 2-3s later" issue.
+function loadCachedProducts() {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) { return []; }
+}
+function saveCachedProducts(list) {
+  try { localStorage.setItem(CACHE_KEY, JSON.stringify(list)); } catch (e) { /* storage unavailable */ }
+}
 
 // Same SVG glyph the original static cards used per category, so the
 // visual style is unchanged even though the cards are now generated.
@@ -264,18 +279,35 @@ function wireSteppers(container) {
 async function loadProducts() {
   try {
     allProducts = await productsApi.list({ available: true });
+    saveCachedProducts(allProducts);
     renderGrid();
     renderHomeFeaturedRail();
   } catch (err) {
     console.error('[products] failed to load:', err.message);
-    const grid = document.getElementById('prodGrid');
-    if (grid) grid.innerHTML = `<div class="prod-empty">Couldn't load products. Pull to refresh or check your connection.</div>`;
+    // Network/backend not reachable - keep showing whatever cached data
+    // (or the initial render) is already on screen instead of blanking it
+    // out with an error, unless there's truly nothing to show at all.
+    if (!allProducts.length) {
+      const grid = document.getElementById('prodGrid');
+      if (grid) grid.innerHTML = `<div class="prod-empty">Couldn't load products. Pull to refresh or check your connection.</div>`;
+    }
   }
 }
 
 // Called once from script.js after DOM is ready.
 export function initProducts({ onAdd }) {
   onAddToCart = onAdd;
+
+  // Render instantly from last-known data (if any) so the page never shows
+  // an empty grid while waiting on the network - then loadProducts() below
+  // silently refreshes it with the live backend data.
+  const cached = loadCachedProducts();
+  if (cached.length) {
+    allProducts = cached;
+    renderGrid();
+    renderHomeFeaturedRail();
+  }
+
   loadProducts();
 
   // Filter chips (All / Milk / Paneer / Ghee / Curd) - same behaviour as before,
