@@ -182,23 +182,13 @@
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
       </div>
     </div>
-    <div class="pkg-grid">
-      <div class="pkg-card">
-        <svg class="pkg-drop" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C8 8 5 11.5 5 15a7 7 0 0 0 14 0c0-3.5-3-7-7-13Z"/></svg>
-        <div class="pkg-tag">Daily</div>
-        <div class="pkg-name">1L Toned Milk</div>
-        <div class="pkg-desc">Delivered fresh every morning, glass bottle</div>
-        <div class="pkg-price">₹58 <span>/ day</span></div>
-        <button class="pkg-btn" data-name="1L Toned Milk (Daily)" data-price="58">Subscribe</button>
+    <div class="pkg-rail-outer">
+      <div class="pkg-rail" id="pkgRail">
+        <!-- Real plan cards are loaded here live from the backend by
+             js/plans.js (image, name, tag, price, etc are all admin-editable).
+             This starts empty - no fake/demo cards. -->
       </div>
-      <div class="pkg-card featured">
-        <svg class="pkg-drop" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C8 8 5 11.5 5 15a7 7 0 0 0 14 0c0-3.5-3-7-7-13Z"/></svg>
-        <div class="pkg-tag">Most Popular</div>
-        <div class="pkg-name">Family Pack</div>
-        <div class="pkg-desc">2L full-cream, weekly plan, 2 bottles/day</div>
-        <div class="pkg-price">₹899 <span>/ month</span></div>
-        <button class="pkg-btn" data-name="Family Pack (Monthly)" data-price="899">Subscribe</button>
-      </div>
+      <div class="pkg-dots" id="pkgDots"></div>
     </div>
 
     <!-- FEATURED PRODUCTS -->
