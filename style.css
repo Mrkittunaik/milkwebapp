@@ -778,6 +778,15 @@
   }
   .det-input:last-child{margin-bottom:0;}
   .det-input:focus{outline:none; border-color:var(--yellow-deep);}
+  /* Address text field while it's being re-fetched after a pin drag */
+  .det-input.addr-updating{
+    border-color:var(--green-dim); background:var(--green-light);
+    animation:addrUpdatingPulse 1s ease-in-out infinite;
+  }
+  @keyframes addrUpdatingPulse{
+    0%,100%{ opacity:1; }
+    50%{ opacity:.6; }
+  }
   .det-field-row{display:flex; gap:8px; margin-bottom:8px;}
   .det-field-row .det-input{margin-bottom:0;}
   .det-geo-status{
