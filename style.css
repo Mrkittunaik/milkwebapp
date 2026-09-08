@@ -1008,7 +1008,11 @@
     padding:5px 10px; border-radius:20px; white-space:nowrap; flex-shrink:0;
   }
   .live-order-eta-pill.delivered{background:var(--green-light); color:var(--green-dim);}
-  .live-order-map{width:100%; height:150px; border-radius:12px; overflow:hidden; background:var(--card-hi); margin-bottom:10px;}
+  .live-order-map{width:100%; height:150px; border-radius:12px; overflow:hidden; background:var(--card-hi); margin-bottom:10px; position:relative;}
+  /* Compact Leaflet zoom control for the small mini-maps - default
+     Leaflet buttons are sized for full-screen maps and look oversized here. */
+  .live-order-map .leaflet-control-zoom{ transform:scale(.8); transform-origin:bottom right; margin:0 4px 4px 0 !important; }
+  .live-order-map .leaflet-control-zoom a{ box-shadow:0 1px 4px rgba(0,0,0,.2); }
   .live-order-stats{display:flex; gap:8px; margin-bottom:12px;}
   .live-order-stat{
     flex:1; text-align:center; background:var(--card-hi); border-radius:var(--radius-sm); padding:8px 6px; min-width:0;
