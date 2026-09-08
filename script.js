@@ -392,6 +392,39 @@
   }
 
   /* =========================================================
+     LOCATION PERMISSION STATUS
+     -------------------------------------------------------------------------
+     A browser can only show its native "Allow location access?" prompt from
+     an actual navigator.geolocation.getCurrentPosition/watchPosition call -
+     there's no way to pop it proactively from page-load JS alone. What we
+     CAN do proactively is check (via the Permissions API, where supported)
+     whether access is already denied, and surface a clear, honest message
+     instead of the button silently failing later. window.PD_LOC_PERMISSION
+     is kept updated so any location-using code can check it first.
+  ========================================================= */
+  window.PD_LOC_PERMISSION = 'unknown'; // 'granted' | 'denied' | 'prompt' | 'unsupported' | 'unknown'
+  if(navigator.permissions && navigator.permissions.query){
+    navigator.permissions.query({ name: 'geolocation' }).then(status=>{
+      window.PD_LOC_PERMISSION = status.state;
+      status.onchange = () => { window.PD_LOC_PERMISSION = status.state; };
+    }).catch(()=>{ window.PD_LOC_PERMISSION = 'unknown'; });
+  } else {
+    window.PD_LOC_PERMISSION = 'unsupported';
+  }
+
+  // Called right before any geolocation request, so the user gets a clear
+  // heads-up (not just a silent OS prompt) about WHY the app wants their
+  // exact location, and what to do if they'd previously said no.
+  function announceLocationRequest(){
+    if(window.PD_LOC_PERMISSION === 'denied'){
+      showToast('Location access is blocked — enable it in your browser/phone settings for exact delivery location');
+      return false;
+    }
+    showToast('Requesting location access for exact delivery location\u2026');
+    return true;
+  }
+
+  /* =========================================================
      RIPPLE EFFECT for .ripple buttons
   ========================================================= */
   document.querySelectorAll('.ripple').forEach(btn=>{
@@ -823,6 +856,15 @@
     return `Current &middot; ${d.colony || d.area}, ${d.city}`;
   }
 
+  // Same "keep sampling until GPS-grade accuracy" approach used by the
+  // detailed address form (detUseLocBtn below) - this quick top-bar
+  // picker used to grab getCurrentPosition's very first fix, which on
+  // many phones is a fast but rough Wi-Fi/cell-tower estimate (often
+  // off by hundreds or thousands of meters) rather than real GPS.
+  const QUICK_LOC_TARGET_ACCURACY_M = 20;
+  const QUICK_LOC_ACCEPTABLE_ACCURACY_M = 100;
+  const QUICK_LOC_MAX_WAIT_MS = 20000;
+
   if(useLocBtn){
     useLocBtn.addEventListener('click', ()=>{
       if(!navigator.geolocation){
@@ -831,22 +873,65 @@
         closeLocModal();
         return;
       }
+      if(!announceLocationRequest()){
+        closeLocModal();
+        return;
+      }
       useLocBtn.classList.add('loading');
-      useLocBtnText.textContent = 'Fetching location...';
+      useLocBtnText.textContent = 'Requesting location permission...';
       const spinner = document.createElement('span');
       spinner.className = 'spinner';
       useLocBtn.prepend(spinner);
 
-      navigator.geolocation.getCurrentPosition(async (pos)=>{
-        const { latitude, longitude } = pos.coords;
-        const label = await reverseGeocode(latitude, longitude);
-        setDeliveryAddress(label);
+      let best = null;
+      let settled = false;
+      let watchId = null;
+      const startedAt = Date.now();
+
+      function finish(force){
+        if(settled) return;
+        if(!force && best && best.accuracy > QUICK_LOC_ACCEPTABLE_ACCURACY_M && (Date.now() - startedAt) < QUICK_LOC_MAX_WAIT_MS){
+          return; // keep waiting for a better fix - don't settle for a rough one yet
+        }
+        settled = true;
+        clearTimeout(maxWaitTimer);
+        if(watchId !== null){ navigator.geolocation.clearWatch(watchId); watchId = null; }
         useLocBtn.classList.remove('loading');
         useLocBtnText.textContent = 'Use my current location';
         spinner.remove();
-        closeLocModal();
-        showToast('Delivery location updated');
+
+        if(!best){
+          setDeliveryAddress('Current &middot; Kondapur, Hyderabad');
+          closeLocModal();
+          showToast('Could not fetch live location — using Kondapur, Hyderabad');
+          return;
+        }
+
+        reverseGeocode(best.lat, best.lng).then(label=>{
+          setDeliveryAddress(label);
+          closeLocModal();
+          showToast(best.accuracy > QUICK_LOC_ACCEPTABLE_ACCURACY_M
+            ? `Location set (rough fix, \u00b1${Math.round(best.accuracy)}m) — adjust the exact address any time`
+            : `Delivery location updated (\u00b1${Math.round(best.accuracy)}m accuracy)`);
+        });
+      }
+
+      const maxWaitTimer = setTimeout(()=> finish(true), QUICK_LOC_MAX_WAIT_MS);
+
+      // watchPosition (not getCurrentPosition) so we get repeated fixes and
+      // can hold out for a real GPS-grade one instead of taking whatever
+      // arrives first. This is also what triggers the browser's native
+      // location-permission prompt the first time it's called.
+      watchId = navigator.geolocation.watchPosition((pos)=>{
+        const { latitude, longitude, accuracy } = pos.coords;
+        if(!best || accuracy < best.accuracy) best = { lat: latitude, lng: longitude, accuracy };
+        useLocBtnText.textContent = `Narrowing down location (\u00b1${Math.round(accuracy)}m)...`;
+        if(accuracy <= QUICK_LOC_TARGET_ACCURACY_M) finish(true);
+        else if(accuracy <= QUICK_LOC_ACCEPTABLE_ACCURACY_M) finish(false);
       }, (err)=>{
+        settled = true;
+        clearTimeout(maxWaitTimer);
+        if(watchId !== null){ navigator.geolocation.clearWatch(watchId); watchId = null; }
         useLocBtn.classList.remove('loading');
         useLocBtnText.textContent = 'Use my current location';
         spinner.remove();
@@ -854,11 +939,11 @@
         setDeliveryAddress('Current &middot; Kondapur, Hyderabad');
         closeLocModal();
         if(err && err.code === 1){
-          showToast('Location permission denied — using Kondapur, Hyderabad');
+          showToast('Location permission denied — turn it on in your browser/phone settings to use exact location');
         } else {
           showToast('Could not fetch live location — using Kondapur, Hyderabad');
         }
-      }, { enableHighAccuracy:true, timeout:8000, maximumAge:60000 });
+      }, { enableHighAccuracy:true, timeout:QUICK_LOC_MAX_WAIT_MS, maximumAge:0 });
     });
   }
 
@@ -1023,7 +1108,9 @@
   function resetNewAddrForm(){
     newAddrForm.style.display = 'none';
     document.getElementById('newAddrLabel').value = '';
-    document.getElementById('newAddrBuilding').value = '';
+    const buildingEl = document.getElementById('newAddrBuilding');
+    buildingEl.value = '';
+    delete buildingEl.dataset.userEdited;
     document.getElementById('newAddrFloor').value = '';
     document.getElementById('newAddrRoom').value = '';
     document.getElementById('newAddrFull').value = '';
@@ -1035,6 +1122,11 @@
     detCapturedGPS = null;
     detManuallyAdjusted = false;
   }
+  // Once the user types their own building/house text, live pin-drag
+  // updates must never silently overwrite it.
+  document.getElementById('newAddrBuilding').addEventListener('input', function(){
+    this.dataset.userEdited = '1';
+  });
   if(addNewAddrBtn) addNewAddrBtn.addEventListener('click', ()=>{
     newAddrForm.style.display = 'block';
     newAddrForm.scrollIntoView({ behavior:'smooth', block:'nearest' });
@@ -1102,24 +1194,69 @@
   let detLeafletAccuracyDot = null; // blue Google-Maps-style dot at the RAW GPS fix
   let detLeafletAccuracyRing = null;// translucent blue ring showing actual GPS accuracy radius
   const ADDRESS_RADIUS_METERS = 50;   // delivery-radius circle shown around the pin
-  const TARGET_ACCURACY_M = 20;       // stop early once GPS is at least this precise (tighter than before)
-  const MAX_ACQUIRE_MS = 15000;       // give up waiting for a better fix after this long
+  const TARGET_ACCURACY_M = 20;       // stop early once GPS is at least this precise
+  const ACCEPTABLE_ACCURACY_M = 100;  // if we never hit TARGET, still accept anything under this
+  const MAX_ACQUIRE_MS = 25000;       // give real GPS (not just wifi/cell) time to lock on, especially indoors/cold-start
 
   function geoStatusText(){
     if(!pendingAddrCoords) return '';
+    const coordNote = ` &middot; ${pendingAddrCoords.lat.toFixed(6)}, ${pendingAddrCoords.lng.toFixed(6)}`;
     if(detManuallyAdjusted){
-      return `<span class="geo-dot"></span> Delivery pin adjusted manually &middot; blue dot shows your actual GPS location &middot; ${ADDRESS_RADIUS_METERS}m delivery radius shown below`;
+      return `<span class="geo-dot"></span> Delivery pin adjusted manually &middot; blue dot shows your actual GPS location${coordNote}`;
     }
     const acc = Math.round(pendingAddrCoords.accuracy || 0);
     const d = pendingAddrCoords.geo || {};
     const dirNote = d.landmarkDir ? ` &middot; ${d.landmarkDir}` : '';
     const pinNote = d.pincode ? ` &middot; PIN ${d.pincode}` : '';
-    return `<span class="geo-dot"></span> Live location captured (\u00b1${acc}m GPS accuracy)${dirNote}${pinNote} &mdash; drag the map to fine-tune the exact spot`;
+    return `<span class="geo-dot"></span> Live location captured (\u00b1${acc}m GPS accuracy)${dirNote}${pinNote}${coordNote} &mdash; drag the map to fine-tune the exact spot`;
   }
   function refreshGeoStatus(){
     if(!pendingAddrCoords) return;
     detGeoStatus.style.display = 'flex';
     detGeoStatus.innerHTML = geoStatusText();
+  }
+
+  // Re-runs reverse geocoding for wherever the pin currently sits and
+  // writes the result straight into the address preview/field, so the
+  // text visibly updates as the user drags the map - not just the raw
+  // lat/lng changing behind a stale label. Debounced so rapid drags don't
+  // fire a network request per pixel, and race-guarded so a slow response
+  // from an earlier drag can never overwrite a newer one.
+  let liveAddrDebounce = null;
+  let liveAddrRequestId = 0;
+  function liveUpdateAddressText(lat, lng){
+    const fullField = document.getElementById('newAddrFull');
+    const buildingField = document.getElementById('newAddrBuilding');
+    if(!fullField) return;
+
+    clearTimeout(liveAddrDebounce);
+    fullField.classList.add('addr-updating');
+    fullField.placeholder = 'Updating address\u2026';
+
+    const myRequestId = ++liveAddrRequestId;
+    liveAddrDebounce = setTimeout(()=>{
+      reverseGeocodeDetailed(lat, lng).then(d=>{
+        // A newer drag already kicked off another request - drop this
+        // stale one instead of overwriting the fresher address text.
+        if(myRequestId !== liveAddrRequestId) return;
+        if(!pendingAddrCoords) return; // form was reset while this was in flight
+
+        pendingAddrCoords.geo = d;
+        fullField.value = d.full;
+        fullField.classList.remove('addr-updating');
+        fullField.placeholder = '';
+        // Only auto-fill the building/house-number field if the user
+        // hasn't already typed their own - never overwrite their input.
+        if(d.houseNumber && buildingField && !buildingField.dataset.userEdited){
+          buildingField.value = d.houseNumber;
+        }
+        refreshGeoStatus();
+      }).catch(()=>{
+        if(myRequestId !== liveAddrRequestId) return;
+        fullField.classList.remove('addr-updating');
+        fullField.placeholder = '';
+      });
+    }, 450); // debounce - waits for dragging to actually settle
   }
 
   function renderGeoMap(lat, lng, accuracyMeters){
@@ -1181,6 +1318,10 @@
         }
         detManuallyAdjusted = true;
         refreshGeoStatus();
+        // Re-run reverse geocoding for wherever the pin now sits, so the
+        // address text/field live-updates as the user drags the map -
+        // not just the lat/lng silently changing underneath a stale label.
+        liveUpdateAddressText(c.lat, c.lng);
       });
     } else {
       detLeafletMap.setView([lat, lng], 18);
@@ -1204,6 +1345,7 @@
     detLeafletMap.setView([detCapturedGPS.lat, detCapturedGPS.lng], 18);
     detLeafletCircle.setLatLng([detCapturedGPS.lat, detCapturedGPS.lng]);
     refreshGeoStatus();
+    liveUpdateAddressText(detCapturedGPS.lat, detCapturedGPS.lng);
     showToast('Pin reset to your GPS location');
   });
 
@@ -1213,6 +1355,7 @@
       showToast('Geolocation not supported on this device');
       return;
     }
+    if(!announceLocationRequest()) return;
     if(detWatchId !== null){ navigator.geolocation.clearWatch(detWatchId); detWatchId = null; }
 
     detManuallyAdjusted = false;
@@ -1226,9 +1369,17 @@
 
     let best = null;      // best { lat, lng, accuracy } seen across all readings
     let settled = false;  // guards against finishing twice (watch fire + timeout race)
+    const acquireStarted = Date.now();
 
-    function finishAcquiring(){
+    function finishAcquiring(force){
       if(settled) return;
+      // Don't settle for a bad Wi-Fi/cell-tower fix (hundreds/thousands of
+      // meters off) just because SOME reading came in - keep waiting for a
+      // real GPS-grade fix until the full MAX_ACQUIRE_MS window is used up,
+      // unless the caller explicitly forces acceptance (timeout hit).
+      if(!force && best && best.accuracy > ACCEPTABLE_ACCURACY_M && (Date.now() - acquireStarted) < MAX_ACQUIRE_MS){
+        return;
+      }
       settled = true;
       clearTimeout(maxWaitTimer);
       if(detWatchId !== null){ navigator.geolocation.clearWatch(detWatchId); detWatchId = null; }
@@ -1241,6 +1392,13 @@
         detGeoStatus.style.display = 'none';
         showToast('Could not fetch live location, try again');
         return;
+      }
+
+      if(best.accuracy > ACCEPTABLE_ACCURACY_M){
+        // Even after the full wait, all we got was a rough network-based
+        // fix - still usable (draggable pin lets them fix it exactly) but
+        // say so plainly instead of implying it's precise.
+        showToast(`Only got a rough fix (\u00b1${Math.round(best.accuracy)}m) \u2014 drag the pin to your exact spot`);
       }
 
       detCapturedGPS = { lat: best.lat, lng: best.lng, accuracy: best.accuracy };
@@ -1267,7 +1425,7 @@
     // Keep sampling fixes (accuracy typically improves over the first
     // several seconds as more satellites lock in) until we hit a good
     // reading, or MAX_ACQUIRE_MS elapses — whichever comes first.
-    const maxWaitTimer = setTimeout(finishAcquiring, MAX_ACQUIRE_MS);
+    const maxWaitTimer = setTimeout(()=> finishAcquiring(true), MAX_ACQUIRE_MS);
 
     detWatchId = navigator.geolocation.watchPosition((pos)=>{
       const { latitude, longitude, accuracy } = pos.coords;
@@ -1276,7 +1434,9 @@
       }
       detGeoStatus.innerHTML = `<span class="geo-dot"></span> Narrowing down your location \u2014 currently \u00b1${Math.round(accuracy)}m...`;
       if(accuracy <= TARGET_ACCURACY_M){
-        finishAcquiring();
+        finishAcquiring(true);
+      } else if(accuracy <= ACCEPTABLE_ACCURACY_M){
+        finishAcquiring(false);
       }
     }, (err)=>{
       settled = true;
@@ -2668,6 +2828,7 @@
   function startMyLiveLocation(){
     if(!navigator.geolocation || !trackMap) return;
     if(myWatchId !== null) return; // already watching
+    if(typeof announceLocationRequest === 'function') announceLocationRequest();
     myWatchId = navigator.geolocation.watchPosition((pos)=>{
       const { latitude, longitude } = pos.coords;
       if(!myLiveMarker){
