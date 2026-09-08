@@ -992,6 +992,51 @@
   .order-actions .order-link{border:1px solid var(--line); border-radius:var(--radius-sm); padding:6px 10px;}
   .order-empty{text-align:center; color:var(--muted); font-size:12.5px; padding:40px 10px;}
 
+  /* ---------- Live delivery card (Orders screen) ----------
+     One rich card per delivery slot (morning/afternoon), each with its
+     own embedded mini live-tracking map, distance/ETA readout and a
+     direct call button - shown for any order currently out for delivery. */
+  .live-order-card{
+    background:var(--card); border:1px solid var(--line); border-radius:var(--radius);
+    padding:14px; margin-bottom:14px; box-shadow:0 2px 12px rgba(43,36,16,.07);
+  }
+  .live-order-head{display:flex; align-items:flex-start; justify-content:space-between; gap:10px; margin-bottom:10px;}
+  .live-order-slot{font-size:13.5px; font-weight:800; color:var(--ink);}
+  .live-order-window{font-size:11px; color:var(--muted); margin-top:2px;}
+  .live-order-eta-pill{
+    background:rgba(253,194,2,.18); color:var(--yellow-deep); font-size:11px; font-weight:800;
+    padding:5px 10px; border-radius:20px; white-space:nowrap; flex-shrink:0;
+  }
+  .live-order-eta-pill.delivered{background:var(--green-light); color:var(--green-dim);}
+  .live-order-map{width:100%; height:150px; border-radius:12px; overflow:hidden; background:var(--card-hi); margin-bottom:10px;}
+  .live-order-stats{display:flex; gap:8px; margin-bottom:12px;}
+  .live-order-stat{
+    flex:1; text-align:center; background:var(--card-hi); border-radius:var(--radius-sm); padding:8px 6px; min-width:0;
+  }
+  .live-order-stat span{display:block; font-size:12.5px; font-weight:800; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .live-order-stat small{display:block; font-size:9.5px; color:var(--muted); margin-top:2px;}
+  .live-order-rider{display:flex; align-items:center; gap:10px; padding:10px 0; border-top:1px solid var(--line); border-bottom:1px solid var(--line); margin-bottom:10px;}
+  .live-order-rider-avatar{width:36px; height:36px; border-radius:50%; background:var(--green-light); color:var(--green-dim); font-weight:800; display:flex; align-items:center; justify-content:center; flex-shrink:0;}
+  .live-order-rider-info{flex:1; min-width:0;}
+  .live-order-rider-name{font-size:12.5px; font-weight:800; color:var(--ink);}
+  .live-order-rider-sub{font-size:10.5px; color:var(--muted); margin-top:1px;}
+  .live-order-call-btn{
+    display:flex; align-items:center; gap:5px; background:var(--green); color:#fff; font-size:11.5px; font-weight:800;
+    padding:8px 12px; border-radius:20px; flex-shrink:0; text-decoration:none;
+  }
+  .live-order-call-btn:active{transform:scale(.95);}
+  .live-order-actions{display:flex; gap:8px;}
+  .live-order-actions .order-link{border:1px solid var(--line); border-radius:var(--radius-sm); padding:6px 10px; font-size:11.5px;}
+
+  /* Delivery-bike marker used inside the mini live-tracking map - a small
+     moving icon riding the route toward the house, Swiggy/Zomato style. */
+  .order-bike-marker{
+    width:30px; height:30px; border-radius:50%; background:var(--yellow-deep); border:2.5px solid #fff;
+    box-shadow:0 2px 8px rgba(0,0,0,.3); display:flex; align-items:center; justify-content:center; color:#231C08;
+    transition:transform .7s linear; animation:bikeBob 1s ease-in-out infinite;
+  }
+  @keyframes bikeBob{0%,100%{ transform:translateY(0); } 50%{ transform:translateY(-2px); }}
+
   /* =========================================================
      BILL / INVOICE MODAL
   ========================================================= */
