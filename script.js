@@ -1275,7 +1275,7 @@
       return;
     }
     if(!detLeafletMap){
-      detLeafletMap = L.map(detGeoMap, { zoomControl:false, attributionControl:true }).setView([lat, lng], 18);
+      detLeafletMap = L.map(detGeoMap, { zoomControl:true, attributionControl:true }).setView([lat, lng], 18);
       // CARTO Voyager tiles: free, no API key, and much easier to read at
       // a glance than raw OSM - clearer road/building contrast, labels
       // sized sensibly, closer to the "Google Maps" look people expect.
@@ -2921,17 +2921,19 @@
   }
 
   // Sets up one order card's embedded live mini-map: a bike icon riding
-  // from the rider's current (demo) position toward the house, with a
-  // distance readout and a countdown ETA - the same underlying data
-  // model as the full-screen tracking page, just rendered small.
-  function initOrderCardMiniMap(cardKey, order){
+  // the ACTUAL shortest road route (via OSRM) from the rider's current
+  // position toward the house - same idea as Google Maps navigation,
+  // not a straight line - with a live distance readout and countdown ETA.
+  // Zoom in/out is enabled (pinch + scroll + +/- buttons) like a real map.
+  async function initOrderCardMiniMap(cardKey, order){
     const el = document.getElementById('map-' + cardKey);
     if(!el || typeof L === 'undefined') return;
 
     const dest = order.deliveryDest || [19.0760, 72.8777];
     const start = order.rider.start || [19.0980, 72.9010];
 
-    const map = L.map(el, { zoomControl:false, attributionControl:false, dragging:false, scrollWheelZoom:false, touchZoom:false, doubleClickZoom:false });
+    const map = L.map(el, { zoomControl:true, attributionControl:false, dragging:true, scrollWheelZoom:true, touchZoom:true, doubleClickZoom:true });
+    map.zoomControl.setPosition('bottomright');
     L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
       maxZoom: 20, subdomains: 'abcd'
     }).addTo(map);
@@ -2945,25 +2947,31 @@
       iconSize:[30,30], iconAnchor:[15,15]
     });
 
-    // Visible route line from rider to house, so the path is obvious at a
-    // glance instead of just two disconnected icons on the map.
-    const route = buildRoute(start, dest, 220);
-    L.polyline(route, { color: '#4CAF6D', weight: 3, opacity: 0.55, dashArray: '1,8', lineCap: 'round' }).addTo(map);
-
     const homeMarker = L.marker(dest, { icon: homeIcon }).addTo(map);
     const riderMarker = L.marker(start, { icon: bikeIcon }).addTo(map);
-    map.fitBounds(L.latLngBounds([start, dest]), { padding:[24,24] });
+    map.fitBounds(L.latLngBounds([start, dest]), { padding:[30,30] });
     setTimeout(()=> map.invalidateSize(), 150);
-
-    let routeIdx = 0;
-    const totalEtaMinutes = order.etaMinutes || 20;
-    const tickMs = Math.max(700, (totalEtaMinutes * 60000) / route.length);
 
     const card = el.closest('.live-order-card');
     const distEl = card ? card.querySelector('[data-dist]') : null;
     const timeEl = card ? card.querySelector('[data-time]') : null;
     const etaPill = card ? card.querySelector('[data-eta-pill]') : null;
 
+    // Fetch the real shortest road route in the background; the map is
+    // already usable (icons + zoom) while this is in flight.
+    const roadRoute = await fetchRoadRoute(start, dest);
+    const route = roadRoute.points;
+
+    // Visible route line following the actual roads, so the path looks
+    // like real navigation instead of a straight line between two pins.
+    L.polyline(route, { color: '#4CAF6D', weight: 4, opacity: 0.65, lineCap: 'round', lineJoin: 'round' }).addTo(map);
+    map.fitBounds(L.latLngBounds(route), { padding:[30,30] });
+
+    let routeIdx = 0;
+    // Prefer OSRM's real driving duration for the countdown when available;
+    // fall back to the demo ETA if the routing API couldn't be reached.
+    const totalEtaMinutes = roadRoute.durationMin || order.etaMinutes || 20;
+    const tickMs = Math.max(700, (totalEtaMinutes * 60000) / route.length);
 
     function tick(){
       if(routeIdx >= route.length){
@@ -3072,19 +3080,20 @@
   }
   window.stopMyLiveLocation = stopMyLiveLocation;
 
-  function initTrackMap(startLatLng, endLatLng){
+  async function initTrackMap(startLatLng, endLatLng){
     const el = document.getElementById('trackMap');
     if(!el || typeof L === 'undefined') return;
 
     if(!trackMap){
-      trackMap = L.map(el, { zoomControl:false, attributionControl:false });
+      trackMap = L.map(el, { zoomControl:true, attributionControl:false, dragging:true, scrollWheelZoom:true, touchZoom:true, doubleClickZoom:true });
+      trackMap.zoomControl.setPosition('bottomright');
       L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
         maxZoom: 20, subdomains: 'abcd'
       }).addTo(trackMap);
 
-      // Visible dashed route line from rider to house - makes the path
-      // easy to read at a glance, same treatment as the order-card mini map.
-      trackRouteLine = L.polyline([startLatLng, endLatLng], { color: '#4CAF6D', weight: 3, opacity: 0.55, dashArray: '1,8', lineCap: 'round' }).addTo(trackMap);
+      // Straight placeholder line until the real road route (below)
+      // resolves - avoids the map looking empty while it loads.
+      trackRouteLine = L.polyline([startLatLng, endLatLng], { color: '#4CAF6D', weight: 3, opacity: 0.4, dashArray: '1,8', lineCap: 'round' }).addTo(trackMap);
 
       riderIcon = L.divIcon({ className:'', html:'<div class="rider-marker"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="18.5" cy="17.5" r="3.5"/><path d="M15 6a1 1 0 0 0-1-1h-3l3.5 4.5H15"/><path d="M9 17.5V14l-3-3 4-3 2 3h3"/></svg></div>', iconSize:[34,34], iconAnchor:[17,17] });
       homeIcon = L.divIcon({ className:'', html:'<div class="home-marker"></div>', iconSize:[26,26], iconAnchor:[13,24] });
@@ -3099,12 +3108,22 @@
     }
     trackMap.fitBounds(L.latLngBounds([startLatLng, endLatLng]), { padding:[36,36] });
     setTimeout(()=> trackMap.invalidateSize(), 200);
+
+    // Replace the placeholder straight line with the real shortest road
+    // route once it resolves - same navigation-style path as the mini maps.
+    const roadRoute = await fetchRoadRoute(startLatLng, endLatLng);
+    if(trackRouteLine){
+      trackRouteLine.setLatLngs(roadRoute.points);
+      trackRouteLine.setStyle({ opacity: 0.65, weight: 4, dashArray: null });
+    }
+    trackMap.fitBounds(L.latLngBounds(roadRoute.points), { padding:[36,36] });
+    return roadRoute;
   }
 
   // Builds a slightly-wiggly path of intermediate points between two
-  // coordinates so the rider marker doesn't move in a perfectly straight
-  // (unrealistic) line. Swap for a real routing API (OSRM/Google Directions)
-  // once one is wired up server-side.
+  // Fake wiggle route used only as an offline/fallback path when the real
+  // routing API (below) can't be reached - never shown if a real road
+  // route was fetched successfully.
   function buildRoute(start, end, steps){
     const pts = [];
     for(let i = 0; i <= steps; i++){
@@ -3115,6 +3134,31 @@
       pts.push([lat + wiggle, lng - wiggle]);
     }
     return pts;
+  }
+
+  // Real shortest-road-path routing via OSRM's free public demo server -
+  // same idea as Google Maps navigation: follows actual streets instead
+  // of a straight line, and also gives us a real driving distance/duration.
+  // Falls back to the fake wiggle route above if the request fails
+  // (offline, rate-limited, etc.) so tracking never breaks.
+  const routeCache = {};
+  async function fetchRoadRoute(start, end){
+    const key = start.join(',') + '|' + end.join(',');
+    if(routeCache[key]) return routeCache[key];
+    try{
+      const url = `https://router.project-osrm.org/route/v1/driving/${start[1]},${start[0]};${end[1]},${end[0]}?overview=full&geometries=geojson`;
+      const res = await fetch(url);
+      const data = await res.json();
+      const route = data.routes && data.routes[0];
+      if(!route) throw new Error('no route');
+      const points = route.geometry.coordinates.map(([lng, lat]) => [lat, lng]);
+      const result = { points, distanceKm: route.distance / 1000, durationMin: route.duration / 60 };
+      routeCache[key] = result;
+      return result;
+    } catch(e){
+      // Offline / API unreachable - fall back to the synthetic wiggle path.
+      return { points: buildRoute(start, end, 220), distanceKm: haversineKm(start, end), durationMin: null, fallback: true };
+    }
   }
 
   function haversineKm(a, b){
@@ -3147,20 +3191,25 @@
     if(pill) pill.textContent = step === 'delivered' ? 'Delivered' : etaMinutes + ' min away';
   });
 
-  function beginLiveTracking(totalEtaMinutes){
+  async function beginLiveTracking(totalEtaMinutes){
     clearInterval(trackFeedTimer);
     // Demo coordinates: rider starts ~2.5km from the (demo) delivery address.
     const end = [19.0760, 72.8777];
     const start = [19.0980, 72.9010];
-    trackRoute = buildRoute(start, end, 240); // 240 ticks across the whole ETA
-    trackRouteIdx = 0;
 
-    initTrackMap(start, end);
+    initTrackMap(start, end); // shows immediately with a placeholder line while routing resolves
     setTrackStep('placed');
     setTimeout(()=> setTrackStep('preparing'), 1500);
     setTimeout(()=> fakeSocket.emit('order:status', { step:'out', etaMinutes: totalEtaMinutes }), 4000);
 
-    const tickMs = Math.max(600, (totalEtaMinutes * 60000) / trackRoute.length);
+    // Real shortest road route - the animated rider now follows actual
+    // streets instead of a straight line, same as Google Maps navigation.
+    const roadRoute = await fetchRoadRoute(start, end);
+    trackRoute = roadRoute.points;
+    trackRouteIdx = 0;
+    const etaForAnimation = roadRoute.durationMin || totalEtaMinutes;
+
+    const tickMs = Math.max(600, (etaForAnimation * 60000) / trackRoute.length);
     trackFeedTimer = setInterval(()=>{
       if(trackRouteIdx >= trackRoute.length){
         clearInterval(trackFeedTimer);
@@ -3171,7 +3220,7 @@
       // Real integration: this whole block is replaced by the socket.io
       // 'deliveryBoy:location' listener registered above.
       fakeSocket.emit('deliveryBoy:location', { lat, lng, destination: end });
-      const minsLeft = Math.max(1, Math.round(totalEtaMinutes * (1 - trackRouteIdx / trackRoute.length)));
+      const minsLeft = Math.max(1, Math.round(etaForAnimation * (1 - trackRouteIdx / trackRoute.length)));
       const pill = document.getElementById('trackEtaPill');
       if(pill) pill.textContent = minsLeft + ' min away';
       trackRouteIdx++;
