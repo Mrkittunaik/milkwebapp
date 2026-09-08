@@ -2632,6 +2632,28 @@
     savePaymentHistory(paymentHistory);
   }
 
+  // DEMO: a "today" active subscription order with BOTH delivery slots,
+  // so the Orders screen shows two live delivery cards (morning +
+  // afternoon) out of the box, without needing to place a real order
+  // first. Safe to remove this block once real orders are flowing.
+  if(!paymentHistory.some(o => o.paymentRef === 'DEMO_SEED_TODAY')){
+    paymentHistory.unshift({
+      id: nextOrderId(),
+      date: formatOrderDate(new Date()),
+      status: 'paid',
+      items: [{ name: 'Family Pack subscription', qty: 1, price: 899 }],
+      total: 899,
+      method: 'upi',
+      paymentRef: 'DEMO_SEED_TODAY',
+      active: true,
+      slots: ['morning', 'afternoon'],
+      rider: pickDemoRider(1),
+      etaMinutes: 18 + Math.floor(Math.random() * 12),
+      deliveryDest: DEMO_DELIVERY_DEST
+    });
+    savePaymentHistory(paymentHistory);
+  }
+
   function nextOrderId(){
     return 'PD-' + Math.floor(1000 + Math.random() * 9000);
   }
