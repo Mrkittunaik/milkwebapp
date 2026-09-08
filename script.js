@@ -1638,6 +1638,13 @@
      Services script + window.PD_GOOGLE_CLIENT_ID must be set in
      index.html for the Google path to actually prompt.
   ========================================================= */
+  // DEV-ONLY SHORTCUT: skips real OTP verification and the Google
+  // phone-binding step entirely - login completes the instant a valid
+  // phone number is entered, or the instant Google auth succeeds. No SMS,
+  // no backend OTP call. Flip this back to false to restore real OTP
+  // verification and mandatory phone binding before going to production.
+  const SKIP_OTP_VERIFICATION_DEV_MODE = true;
+
   function openLoginGate(onSuccess){
     pendingAuthAction = typeof onSuccess === 'function' ? onSuccess : null;
     document.getElementById('loginStepChoice').classList.add('active');
@@ -1699,8 +1706,11 @@
         userSession.googleId = res.user.googleId;
         userSession.email = res.user.email;
         userSession.name = res.user.name;
-        if(!res.needsPhone){
-          userSession.phone = res.user.phone;
+        // DEV MODE: log straight in on Google auth alone - phone binding
+        // is not required. Flip SKIP_OTP_VERIFICATION_DEV_MODE off above
+        // to restore the "must bind phone" requirement.
+        if(!res.needsPhone || SKIP_OTP_VERIFICATION_DEV_MODE){
+          userSession.phone = res.user.phone || userSession.phone;
           userSession.loggedIn = true;
           completeLogin();
         } else {
@@ -1756,6 +1766,17 @@
       showToast('Enter a valid 10-digit mobile number');
       return;
     }
+
+    if(SKIP_OTP_VERIFICATION_DEV_MODE){
+      // Straight to logged-in, no OTP screen, no backend verification call.
+      userSession.phone = phone;
+      userSession.name = userSession.name || 'Pakka Doodhwala User';
+      userSession.loggedIn = true;
+      orderDetails.phone = phone;
+      completeLogin();
+      return;
+    }
+
     phoneLoginSendOtpBtn.disabled = true;
     try{
       const res = await window.PD_REAL_AUTH.sendOtp(phone);
