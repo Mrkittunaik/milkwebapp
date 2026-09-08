@@ -1276,9 +1276,13 @@
     }
     if(!detLeafletMap){
       detLeafletMap = L.map(detGeoMap, { zoomControl:false, attributionControl:true }).setView([lat, lng], 18);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19,
-        attribution: '&copy; OpenStreetMap'
+      // CARTO Voyager tiles: free, no API key, and much easier to read at
+      // a glance than raw OSM - clearer road/building contrast, labels
+      // sized sensibly, closer to the "Google Maps" look people expect.
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+        maxZoom: 20,
+        subdomains: 'abcd',
+        attribution: '&copy; OpenStreetMap &copy; CARTO'
       }).addTo(detLeafletMap);
 
       // Blue "you are here" marker — same visual language as Google Maps'
@@ -2928,7 +2932,9 @@
     const start = order.rider.start || [19.0980, 72.9010];
 
     const map = L.map(el, { zoomControl:false, attributionControl:false, dragging:false, scrollWheelZoom:false, touchZoom:false, doubleClickZoom:false });
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:19 }).addTo(map);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+      maxZoom: 20, subdomains: 'abcd'
+    }).addTo(map);
 
     const homeIcon = L.divIcon({ className:'', html:'<div class="home-marker"></div>', iconSize:[22,22], iconAnchor:[11,20] });
     // Delivery-bag-on-bike icon, matches the "Swiggy-style" moving marker
@@ -2939,12 +2945,16 @@
       iconSize:[30,30], iconAnchor:[15,15]
     });
 
+    // Visible route line from rider to house, so the path is obvious at a
+    // glance instead of just two disconnected icons on the map.
+    const route = buildRoute(start, dest, 220);
+    L.polyline(route, { color: '#4CAF6D', weight: 3, opacity: 0.55, dashArray: '1,8', lineCap: 'round' }).addTo(map);
+
     const homeMarker = L.marker(dest, { icon: homeIcon }).addTo(map);
     const riderMarker = L.marker(start, { icon: bikeIcon }).addTo(map);
     map.fitBounds(L.latLngBounds([start, dest]), { padding:[24,24] });
     setTimeout(()=> map.invalidateSize(), 150);
 
-    const route = buildRoute(start, dest, 220);
     let routeIdx = 0;
     const totalEtaMinutes = order.etaMinutes || 20;
     const tickMs = Math.max(700, (totalEtaMinutes * 60000) / route.length);
@@ -2953,6 +2963,7 @@
     const distEl = card ? card.querySelector('[data-dist]') : null;
     const timeEl = card ? card.querySelector('[data-time]') : null;
     const etaPill = card ? card.querySelector('[data-eta-pill]') : null;
+
 
     function tick(){
       if(routeIdx >= route.length){
@@ -3031,7 +3042,7 @@
     };
   })();
 
-  let trackMap = null, riderMarker = null, homeMarker = null, riderIcon = null, homeIcon = null;
+  let trackMap = null, riderMarker = null, homeMarker = null, riderIcon = null, homeIcon = null, trackRouteLine = null;
   let trackFeedTimer = null, trackRouteIdx = 0, trackRoute = [];
   let myLiveMarker = null, myWatchId = null; // customer's own live GPS blue dot on the track screen
 
@@ -3067,7 +3078,13 @@
 
     if(!trackMap){
       trackMap = L.map(el, { zoomControl:false, attributionControl:false });
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:19 }).addTo(trackMap);
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+        maxZoom: 20, subdomains: 'abcd'
+      }).addTo(trackMap);
+
+      // Visible dashed route line from rider to house - makes the path
+      // easy to read at a glance, same treatment as the order-card mini map.
+      trackRouteLine = L.polyline([startLatLng, endLatLng], { color: '#4CAF6D', weight: 3, opacity: 0.55, dashArray: '1,8', lineCap: 'round' }).addTo(trackMap);
 
       riderIcon = L.divIcon({ className:'', html:'<div class="rider-marker"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="18.5" cy="17.5" r="3.5"/><path d="M15 6a1 1 0 0 0-1-1h-3l3.5 4.5H15"/><path d="M9 17.5V14l-3-3 4-3 2 3h3"/></svg></div>', iconSize:[34,34], iconAnchor:[17,17] });
       homeIcon = L.divIcon({ className:'', html:'<div class="home-marker"></div>', iconSize:[26,26], iconAnchor:[13,24] });
@@ -3076,6 +3093,7 @@
       riderMarker = L.marker(startLatLng, { icon: riderIcon }).addTo(trackMap);
       startMyLiveLocation();
     } else {
+      if(trackRouteLine) trackRouteLine.setLatLngs([startLatLng, endLatLng]);
       homeMarker.setLatLng(endLatLng);
       riderMarker.setLatLng(startLatLng);
     }
