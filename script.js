@@ -729,7 +729,7 @@
       window.PD_REAL_ORDERS.onMyOrdersChanged((updated) => {
         if(String(updated._id) !== String(order._id)) return;
         window.__lastOrder = updated;
-        if(typeof window.renderOrdersScreen === 'function') window.renderOrdersScreen();
+        if(typeof window.renderOrderHistory === 'function') window.renderOrderHistory();
         if(updated.status === 'out') startDeliveryEta(40);
         if(updated.status === 'assigned') showToast('Delivery partner assigned');
       });
@@ -2607,61 +2607,11 @@
     try{ localStorage.setItem(PAYMENT_HISTORY_KEY, JSON.stringify(list)); }catch(e){}
   }
 
-  // Demo delivery riders - used to populate the live order card (name,
-  // phone for the "Call" button, and starting position for the mini map)
-  // until a real backend assigns/streams this per order.
-  const DEMO_RIDERS = [
-    { name: 'Ravi Kumar', phone: '9876543210', start: [19.0980, 72.9010] },
-    { name: 'Suresh Yadav', phone: '9123456780', start: [19.0705, 72.8825] },
-    { name: 'Manoj Singh', phone: '9988776655', start: [19.0865, 72.8901] }
-  ];
-  function pickDemoRider(seed){
-    return DEMO_RIDERS[Math.abs(seed) % DEMO_RIDERS.length];
-  }
-  // Home delivery address used as every demo order's endpoint (matches
-  // the coordinates already used by initTrackMap's demo route below).
-  const DEMO_DELIVERY_DEST = [19.0760, 72.8777];
-
-  let paymentHistory = loadPaymentHistory();
-  if(!paymentHistory){
-    // Seed with the two orders that used to be hardcoded in the markup,
-    // so the Orders screen isn't empty on first run.
-    paymentHistory = [
-      {
-        id: 'PD-2381', date: '27 Aug, 6:42 AM', status: 'paid',
-        items: [{ name:'1L Toned Milk', qty:30, price:60 }, { name:'Fresh Paneer', qty:2, price:56.5 }],
-        total: 1913, method: 'upi', paymentRef: 'DEMO_SEED_1', active: false
-      },
-      {
-        id: 'PD-2352', date: '20 Aug, 6:38 AM', status: 'paid',
-        items: [{ name:'Family Pack subscription', qty:1, price:899 }],
-        total: 899, method: 'upi', paymentRef: 'DEMO_SEED_2', active: false
-      }
-    ];
-    savePaymentHistory(paymentHistory);
-  }
-
-  // DEMO: a "today" active subscription order with BOTH delivery slots,
-  // so the Orders screen shows two live delivery cards (morning +
-  // afternoon) out of the box, without needing to place a real order
-  // first. Safe to remove this block once real orders are flowing.
-  if(!paymentHistory.some(o => o.paymentRef === 'DEMO_SEED_TODAY')){
-    paymentHistory.unshift({
-      id: nextOrderId(),
-      date: formatOrderDate(new Date()),
-      status: 'paid',
-      items: [{ name: 'Family Pack subscription', qty: 1, price: 899 }],
-      total: 899,
-      method: 'upi',
-      paymentRef: 'DEMO_SEED_TODAY',
-      active: true,
-      slots: ['morning', 'afternoon'],
-      rider: pickDemoRider(1),
-      etaMinutes: 18 + Math.floor(Math.random() * 12),
-      deliveryDest: DEMO_DELIVERY_DEST
-    });
-    savePaymentHistory(paymentHistory);
-  }
+  let paymentHistory = loadPaymentHistory() || [];
+  // Note: the Orders screen (renderOrderHistory, below) now reads real
+  // orders from the backend via fetchMyOrders() - paymentHistory here is
+  // only still used for plan-active detection and the saved payment
+  // methods list until those get their own real backend wiring too.
 
   function nextOrderId(){
     return 'PD-' + Math.floor(1000 + Math.random() * 9000);
@@ -2706,9 +2656,6 @@
       name: cartAtCompletion[k].name, qty: cartAtCompletion[k].qty, price: cartAtCompletion[k].price
     })) : (pending && pending.items) || []);
     const total = items.reduce((s, it) => s + it.price * it.qty, 0);
-    const hasPlanItem = items.some(it => /plan|subscription|pack|\/day|\/week|\/month/i.test(it.name || ''));
-    const nowHour = new Date().getHours();
-    const rider = pickDemoRider(paymentHistory.length + 1);
     const entry = {
       id: (pending && pending.orderId) || nextOrderId(),
       date: formatOrderDate(new Date()),
@@ -2717,21 +2664,13 @@
       total: total || (pending ? pending.amount : 0),
       method: (pending && pending.method) || 'upi',
       paymentRef: paymentRef || null,
-      active: true, // just placed -> shows a live "Track" action
-      // Delivery-slot + live-tracking metadata for the order card. A
-      // subscription/plan order gets BOTH a morning and afternoon slot
-      // (two separate delivery cards, same order); a one-off product
-      // order gets whichever slot fits the time it was placed.
-      slots: hasPlanItem ? ['morning', 'afternoon'] : [nowHour < 12 ? 'morning' : 'afternoon'],
-      rider: rider,
-      etaMinutes: 18 + Math.floor(Math.random() * 12),
-      deliveryDest: DEMO_DELIVERY_DEST
+      active: true // used by hasActiveSubscription() plan detection, below
     };
     paymentHistory.unshift(entry);
     savePaymentHistory(paymentHistory);
     clearPendingPayment();
     renderPayResumeBanner();
-    renderOrderHistory();
+    if(typeof window.renderOrderHistory === 'function') window.renderOrderHistory(); // real orders, fetched fresh from the backend
     if(typeof window.renderSubscriptionScreen === 'function') window.renderSubscriptionScreen();
     if(typeof window.renderPaymentMethodsScreen === 'function') window.renderPaymentMethodsScreen();
     window.__lastCompletedOrder = entry;
@@ -2815,87 +2754,126 @@
   }
   renderPayResumeBanner(); // in case a pending attempt survived a page reload
 
-  /* ---------- Orders screen: render from paymentHistory ----------
-     Active orders (status:'paid', active:true) get a rich delivery card
-     per slot (morning/afternoon) with a live mini-map, an animated
-     delivery-bike icon riding toward the house, distance + ETA, and a
-     direct "Call rider" button. Delivered/failed orders keep the plain
-     compact card (view bill / nothing to track). */
+  /* ---------- Orders screen: render from REAL backend orders ----------
+     Fetches the customer's actual orders (GET /api/orders) instead of the
+     old localStorage-only paymentHistory. Active orders (status: placed/
+     preparing/pending_acceptance/out) get a rich delivery card with a live
+     mini-map driven by real driver:location/order:status socket events and
+     the REAL assigned delivery boy's name/phone (populated by the backend),
+     not a picked-at-random demo rider. Delivered/cancelled orders keep the
+     plain compact card. */
   const SLOT_META = {
     morning:   { label: 'Morning delivery', window: '6:00 - 8:00 AM', icon: '\u2600\ufe0f' },
     afternoon: { label: 'Afternoon delivery', window: '1:00 - 3:00 PM', icon: '\ud83c\udf24\ufe0f' }
   };
-  const orderCardMaps = {}; // cardKey -> { map, riderMarker, homeMarker, timer, routeIdx, route }
+  const orderCardMaps = {}; // orderId -> { map, riderMarker, homeMarker, destroy }
+  let myOrders = []; // last fetched real orders, kept for openBill()/click handlers
 
-  function renderOrderHistory(){
+  // Adapts a real backend Order document into the {id, date, method,
+  // paymentRef, status, items, total} shape openBill() already expects,
+  // so the bill/invoice modal keeps working unmodified.
+  function toBillShape(o){
+    return {
+      id: o.orderCode || o._id,
+      date: formatOrderDate(new Date(o.createdAt)),
+      method: (o.paymentStatus === 'cod') ? 'cod' : 'upi',
+      paymentRef: o.paymentRef || null,
+      status: (o.paymentStatus === 'failed') ? 'failed' : 'paid',
+      items: o.items || [],
+      total: o.total
+    };
+  }
+
+  const ACTIVE_STATUSES = ['placed', 'preparing', 'pending_acceptance', 'out'];
+
+  async function renderOrderHistory(){
     const list = document.getElementById('ordersList');
     if(!list) return;
 
     // Tear down any live mini-maps from the previous render so we don't
-    // leak Leaflet instances or leftover interval timers.
-    Object.values(orderCardMaps).forEach(entry => {
-      if(entry.timer) clearInterval(entry.timer);
-      if(entry.map) entry.map.remove();
-    });
+    // leak Leaflet instances or leftover socket listeners.
+    Object.values(orderCardMaps).forEach(entry => { if(entry.destroy) entry.destroy(); });
     for(const k in orderCardMaps) delete orderCardMaps[k];
 
-    if(paymentHistory.length === 0){
+    if(!window.PD_REAL_ORDERS || !isLoggedInSafe()){
+      list.innerHTML = '<div class="order-empty">Log in to see your orders.</div>';
+      return;
+    }
+
+    try{
+      myOrders = await window.PD_REAL_ORDERS.fetchMyOrders();
+    }catch(e){
+      list.innerHTML = '<div class="order-empty">Couldn\u2019t load your orders \u2014 pull to refresh.</div>';
+      return;
+    }
+
+    if(!myOrders.length){
       list.innerHTML = '<div class="order-empty">No orders yet — your paid orders and bills will show up here.</div>';
       return;
     }
 
     const html = [];
-    paymentHistory.forEach((o, idx)=>{
-      const itemsText = o.items.map(it => it.name + (it.qty > 1 ? ' \u00d7 ' + it.qty : '')).join(', ');
+    myOrders.forEach((o)=>{
+      const itemsText = (o.items || []).map(it => it.name + (it.qty > 1 ? ' \u00d7 ' + it.qty : '')).join(', ');
+      const isActive = ACTIVE_STATUSES.includes(o.status);
 
-      if(o.status === 'paid' && o.active && o.rider){
-        // One rich live-delivery card per slot (morning/afternoon plan
-        // orders get two; a single product order gets one).
-        (o.slots && o.slots.length ? o.slots : ['morning']).forEach(slot=>{
-          const cardKey = idx + ':' + slot;
-          const meta = SLOT_META[slot] || SLOT_META.morning;
-          html.push(`
-            <div class="live-order-card" data-card-key="${cardKey}">
-              <div class="live-order-head">
-                <div>
-                  <div class="live-order-slot">${meta.icon} ${meta.label}</div>
-                  <div class="live-order-window">${meta.window} &middot; #${o.id}</div>
-                </div>
-                <div class="live-order-eta-pill" data-eta-pill>Calculating...</div>
+      if(isActive && o.assigned){
+        const slot = o.slot || (new Date(o.createdAt).getHours() < 12 ? 'morning' : 'afternoon');
+        const meta = SLOT_META[slot] || SLOT_META.morning;
+        html.push(`
+          <div class="live-order-card" data-card-key="${o._id}">
+            <div class="live-order-head">
+              <div>
+                <div class="live-order-slot">${meta.icon} ${meta.label}</div>
+                <div class="live-order-window">${meta.window} &middot; #${o.orderCode}</div>
               </div>
-              <div class="live-order-map" id="map-${cardKey}"></div>
-              <div class="live-order-stats">
-                <div class="live-order-stat"><span data-dist>-- km</span><small>Distance</small></div>
-                <div class="live-order-stat"><span data-time>-- min</span><small>Reaching in</small></div>
-                <div class="live-order-stat"><span>${itemsText.length > 22 ? itemsText.slice(0,22) + '\u2026' : itemsText}</span><small>Items</small></div>
+              <div class="live-order-eta-pill" data-eta-pill>${o.status === 'out' ? 'On the way' : 'Preparing'}</div>
+            </div>
+            <div class="live-order-map" id="map-${o._id}"></div>
+            <div class="live-order-stats">
+              <div class="live-order-stat"><span data-dist>-- km</span><small>Distance</small></div>
+              <div class="live-order-stat"><span data-time>-- min</span><small>Reaching in</small></div>
+              <div class="live-order-stat"><span>${itemsText.length > 22 ? itemsText.slice(0,22) + '\u2026' : itemsText}</span><small>Items</small></div>
+            </div>
+            <div class="live-order-rider">
+              <div class="live-order-rider-avatar">${(o.assigned.name || '?').charAt(0)}</div>
+              <div class="live-order-rider-info">
+                <div class="live-order-rider-name">${o.assigned.name || 'Delivery partner'}</div>
+                <div class="live-order-rider-sub">Delivery partner</div>
               </div>
-              <div class="live-order-rider">
-                <div class="live-order-rider-avatar">${o.rider.name.charAt(0)}</div>
-                <div class="live-order-rider-info">
-                  <div class="live-order-rider-name">${o.rider.name}</div>
-                  <div class="live-order-rider-sub">Delivery partner</div>
-                </div>
-                <a class="live-order-call-btn" href="tel:+91${o.rider.phone}" aria-label="Call delivery partner">
-                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
-                  Call
-                </a>
-              </div>
-              <div class="live-order-actions">
-                <span class="order-link" data-track-idx="${idx}">Open full tracking</span>
-                <span class="order-link" data-bill-idx="${idx}">View Bill</span>
-              </div>
-            </div>`);
-        });
+              <a class="live-order-call-btn" href="tel:${o.assigned.phone || ''}" aria-label="Call delivery partner">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+                Call
+              </a>
+            </div>
+            <div class="live-order-actions">
+              <span class="order-link" data-track-id="${o._id}">Open full tracking</span>
+              <span class="order-link" data-bill-id="${o._id}">View Bill</span>
+            </div>
+          </div>`);
+      } else if(isActive){
+        // Placed/preparing/pending_acceptance but no driver assigned yet -
+        // real state, just nothing to show on a map until someone accepts.
+        const statusLabel = o.status === 'pending_acceptance' ? 'Finding a delivery partner' : 'Preparing';
+        html.push(`
+          <div class="order-card">
+            <div class="order-top"><div>
+              <div class="order-id">#${o.orderCode}</div>
+              <div class="order-date">${statusLabel} &middot; ${formatOrderDate(new Date(o.createdAt))}</div>
+            </div><div class="order-status pending">${statusLabel}</div></div>
+            <div class="order-items">${itemsText}</div>
+            <div class="order-bottom"><b>\u20b9${Math.round(o.total).toLocaleString('en-IN')}</b></div>
+          </div>`);
       } else {
-        const statusClass = o.status === 'paid' ? 'done' : 'pending';
-        const statusLabel = o.status === 'paid' ? 'Delivered' : 'Failed';
+        const statusClass = o.status === 'delivered' ? 'done' : 'pending';
+        const statusLabel = o.status === 'delivered' ? 'Delivered' : 'Cancelled';
         const actions = [];
-        if(o.status === 'paid') actions.push('<span class="order-link" data-bill-idx="' + idx + '">View Bill</span>');
+        if(o.status === 'delivered') actions.push('<span class="order-link" data-bill-id="' + o._id + '">View Bill</span>');
         html.push(
           '<div class="order-card">' +
             '<div class="order-top"><div>' +
-              '<div class="order-id">#' + o.id + '</div>' +
-              '<div class="order-date">' + statusLabel + ' &middot; ' + o.date + '</div>' +
+              '<div class="order-id">#' + o.orderCode + '</div>' +
+              '<div class="order-date">' + statusLabel + ' &middot; ' + formatOrderDate(new Date(o.createdAt)) + '</div>' +
             '</div><div class="order-status ' + statusClass + '">' + statusLabel + '</div></div>' +
             '<div class="order-items">' + itemsText + '</div>' +
             '<div class="order-bottom"><b>\u20b9' + Math.round(o.total).toLocaleString('en-IN') + '</b></div>' +
@@ -2907,35 +2885,51 @@
 
     list.innerHTML = html.join('');
 
-    list.querySelectorAll('[data-bill-idx]').forEach(el=>{
-      el.addEventListener('click', ()=> openBill(paymentHistory[+el.dataset.billIdx]));
+    list.querySelectorAll('[data-bill-id]').forEach(el=>{
+      el.addEventListener('click', ()=>{
+        const order = myOrders.find(o => o._id === el.dataset.billId);
+        if(order) openBill(toBillShape(order));
+      });
     });
-    list.querySelectorAll('[data-track-idx]').forEach(el=>{
-      el.addEventListener('click', ()=> goToScreen('track'));
+    list.querySelectorAll('[data-track-id]').forEach(el=>{
+      el.addEventListener('click', ()=>{
+        const order = myOrders.find(o => o._id === el.dataset.trackId);
+        if(order && typeof window.beginLiveTracking === 'function'){
+          const destLatLng = (typeof order.lat === 'number' && typeof order.lng === 'number') ? [order.lat, order.lng] : null;
+          if(destLatLng) window.beginLiveTracking(order, destLatLng);
+        }
+        goToScreen('track');
+      });
     });
 
     // Mini live-tracking maps are initialized after the cards are in the
     // DOM (Leaflet needs the container to actually exist/have size).
-    paymentHistory.forEach((o, idx)=>{
-      if(o.status === 'paid' && o.active && o.rider){
-        (o.slots && o.slots.length ? o.slots : ['morning']).forEach(slot=>{
-          initOrderCardMiniMap(idx + ':' + slot, o);
-        });
-      }
+    myOrders.forEach((o)=>{
+      if(ACTIVE_STATUSES.includes(o.status) && o.assigned) initOrderCardMiniMap(o);
     });
   }
 
-  // Sets up one order card's embedded live mini-map: a bike icon riding
-  // the ACTUAL shortest road route (via OSRM) from the rider's current
-  // position toward the house - same idea as Google Maps navigation,
-  // not a straight line - with a live distance readout and countdown ETA.
-  // Zoom in/out is enabled (pinch + scroll + +/- buttons) like a real map.
-  async function initOrderCardMiniMap(cardKey, order){
+  function isLoggedInSafe(){
+    try{ return !!(window.PD_REAL_AUTH && window.PD_REAL_AUTH.getTokenUserId && window.PD_REAL_AUTH.getTokenUserId()); }
+    catch(e){ return false; }
+  }
+
+  // Sets up one order card's embedded live mini-map: shows the assigned
+  // driver's real position (from driver:location / order:status socket
+  // events, joined via startTrackingOrder) riding toward the delivery
+  // address - no animation, no fake route stepping. Zoom in/out enabled
+  // (pinch + scroll + +/- buttons) like a real map.
+  async function initOrderCardMiniMap(order){
+    const cardKey = order._id;
     const el = document.getElementById('map-' + cardKey);
     if(!el || typeof L === 'undefined') return;
+    if(typeof order.lat !== 'number' || typeof order.lng !== 'number') return;
 
-    const dest = order.deliveryDest || [19.0760, 72.8777];
-    const start = order.rider.start || [19.0980, 72.9010];
+    const dest = [order.lat, order.lng];
+    // Rider's live position isn't known until their first GPS ping arrives -
+    // show the delivery address at both ends until then, same as the main
+    // track screen, so the map isn't empty.
+    const start = dest;
 
     const map = L.map(el, { zoomControl:true, attributionControl:false, dragging:true, scrollWheelZoom:true, touchZoom:true, doubleClickZoom:true });
     map.zoomControl.setPosition('bottomright');
@@ -2944,8 +2938,6 @@
     }).addTo(map);
 
     const homeIcon = L.divIcon({ className:'', html:'<div class="home-marker"></div>', iconSize:[22,22], iconAnchor:[11,20] });
-    // Delivery-bag-on-bike icon, matches the "Swiggy-style" moving marker
-    // requested - a simple bike glyph riding the route toward the house.
     const bikeIcon = L.divIcon({
       className:'',
       html: '<div class="order-bike-marker"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="18.5" cy="17.5" r="3.5"/><path d="M15 6a1 1 0 0 0-1-1h-3l3.5 4.5H15"/><path d="M9 17.5V14l-3-3 4-3 2 3h3"/><rect x="16" y="5" width="4" height="4" rx="1" fill="currentColor" stroke="none"/></svg></div>',
@@ -2962,43 +2954,38 @@
     const timeEl = card ? card.querySelector('[data-time]') : null;
     const etaPill = card ? card.querySelector('[data-eta-pill]') : null;
 
-    // Fetch the real shortest road route in the background; the map is
-    // already usable (icons + zoom) while this is in flight.
-    const roadRoute = await fetchRoadRoute(start, dest);
-    const route = roadRoute.points;
-
-    // Visible route line following the actual roads, so the path looks
-    // like real navigation instead of a straight line between two pins.
-    L.polyline(route, { color: '#4CAF6D', weight: 4, opacity: 0.65, lineCap: 'round', lineJoin: 'round' }).addTo(map);
-    map.fitBounds(L.latLngBounds(route), { padding:[30,30] });
-
-    let routeIdx = 0;
-    // Prefer OSRM's real driving duration for the countdown when available;
-    // fall back to the demo ETA if the routing API couldn't be reached.
-    const totalEtaMinutes = roadRoute.durationMin || order.etaMinutes || 20;
-    const tickMs = Math.max(700, (totalEtaMinutes * 60000) / route.length);
-
-    function tick(){
-      if(routeIdx >= route.length){
-        clearInterval(entry.timer);
+    function onLocation({ lat, lng }){
+      if(typeof lat !== 'number' || typeof lng !== 'number') return;
+      riderMarker.setLatLng([lat, lng]);
+      const distKm = haversineKm([lat, lng], dest);
+      if(distEl) distEl.textContent = distKm.toFixed(1) + ' km';
+      map.panTo([lat, lng], { animate: true });
+    }
+    function onStatus(updated){
+      if(!updated || String(updated._id) !== String(order._id)) return;
+      if(updated.status === 'delivered'){
         if(distEl) distEl.textContent = '0.0 km';
         if(timeEl) timeEl.textContent = 'Arrived';
         if(etaPill){ etaPill.textContent = 'Delivered'; etaPill.classList.add('delivered'); }
-        return;
+      } else if(etaPill){
+        etaPill.textContent = updated.status === 'out' ? 'On the way' : 'Preparing';
       }
-      const [lat, lng] = route[routeIdx];
-      riderMarker.setLatLng([lat, lng]);
-      const distKm = haversineKm([lat, lng], dest);
-      const minsLeft = Math.max(1, Math.round(totalEtaMinutes * (1 - routeIdx / route.length)));
-      if(distEl) distEl.textContent = distKm.toFixed(1) + ' km';
-      if(timeEl) timeEl.textContent = minsLeft + ' min';
-      if(etaPill) etaPill.textContent = minsLeft + ' min away';
-      routeIdx++;
     }
-    tick();
-    const timer = setInterval(tick, tickMs);
-    const entry = { map, riderMarker, homeMarker, timer, routeIdx, route };
-    orderCardMaps[cardKey] = entry;
+
+    // Joins this order's socket room (order:${id}) so real driver:location
+    // and order:status events for THIS card start arriving. Pass the
+    // already-known assigned driver's id so location pings are correctly
+    // scoped to this card even if another order is being tracked at the
+    // same time (e.g. the full-screen track view, or another live card).
+    window.PD_REAL_ORDERS.startTrackingOrder(order._id, { onLocation, onStatus }, order.assigned._id);
+
+    orderCardMaps[cardKey] = {
+      map, riderMarker, homeMarker,
+      destroy(){
+        window.PD_REAL_ORDERS.stopTrackingOrder(order._id);
+        map.remove();
+      }
+    };
   }
   renderOrderHistory();
   window.renderOrderHistory = renderOrderHistory; // re-run when the Orders tab is (re)opened, so mini-maps init correctly
@@ -3214,9 +3201,11 @@
   // Starts live tracking for a real placed order. `order` is the Order
   // document returned by placeRealOrder(); destLatLng is [lat,lng] for the
   // delivery address actually used on that order.
+  let trackedFullScreenOrderId = null;
   async function beginLiveTracking(order, destLatLng){
     if(!order || !destLatLng) return;
     trackDestination = destLatLng;
+    trackedFullScreenOrderId = order._id;
 
     // Rider's starting position isn't known until the backend assigns a
     // driver and that driver's first GPS ping arrives; show the delivery
@@ -3232,10 +3221,13 @@
       onLocation: handleDriverLocation,
       onStatus: handleOrderStatus,
       onAssigned: (updated) => handleOrderStatus(updated)
-    });
+    }, order.assigned ? (order.assigned._id || order.assigned) : null);
   }
   function stopLiveTracking(){
-    if(window.PD_REAL_ORDERS) window.PD_REAL_ORDERS.stopTrackingOrder();
+    // Only stops THIS full-screen order's tracking - any Orders-screen
+    // mini-map cards tracking other orders keep running independently.
+    if(window.PD_REAL_ORDERS && trackedFullScreenOrderId) window.PD_REAL_ORDERS.stopTrackingOrder(trackedFullScreenOrderId);
+    trackedFullScreenOrderId = null;
     trackDestination = null;
   }
   window.beginLiveTracking = beginLiveTracking; // call with (order, [lat,lng]) once an order is placed
