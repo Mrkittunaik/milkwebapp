@@ -77,9 +77,13 @@
     });
     const scr = document.querySelector('.screen.active');
     if(scr) scr.scrollTop = 0;
-    // Stop watching the customer's own GPS once they leave the live
-    // tracking screen — no need to keep polling location in the background.
-    if(leavingTrack && typeof window.stopMyLiveLocation === 'function') window.stopMyLiveLocation();
+    // Stop watching the customer's own GPS and leave the order's socket
+    // room once they leave the live tracking screen — no need to keep
+    // polling location or receiving driver pings in the background.
+    if(leavingTrack){
+      if(typeof window.stopMyLiveLocation === 'function') window.stopMyLiveLocation();
+      if(typeof window.stopLiveTracking === 'function') window.stopLiveTracking();
+    }
   }
 
   document.querySelectorAll('.nav-item[data-screen]').forEach(item=>{
@@ -714,19 +718,20 @@
       // (used by the Orders screen and the bill/invoice view).
       completePendingPayment(pending || startPendingPayment(method), paymentRef, cart);
 
-      // Start real live tracking for this order (socket room join) instead
-      // of the old setTimeout-based simulation.
+      // Start real live tracking for this order (socket room join + map/
+      // marker), replacing the old setTimeout-based simulation entirely.
       window.__trackedOrderId = order._id;
-      window.PD_REAL_ORDERS.startTrackingOrder(order._id, {
-        onStatus: (updated) => {
-          window.__lastOrder = updated;
-          if(typeof window.renderOrdersScreen === 'function') window.renderOrdersScreen();
-          if(updated.status === 'out') startDeliveryEta(40);
-        },
-        onAssigned: (updated) => {
-          window.__lastOrder = updated;
-          showToast('Delivery partner assigned');
-        }
+      const destLatLng = (typeof order.lat === 'number' && typeof order.lng === 'number')
+        ? [order.lat, order.lng]
+        : (selectedAddr ? [selectedAddr.lat, selectedAddr.lng] : null);
+      if(destLatLng) beginLiveTracking(order, destLatLng);
+
+      window.PD_REAL_ORDERS.onMyOrdersChanged((updated) => {
+        if(String(updated._id) !== String(order._id)) return;
+        window.__lastOrder = updated;
+        if(typeof window.renderOrdersScreen === 'function') window.renderOrdersScreen();
+        if(updated.status === 'out') startDeliveryEta(40);
+        if(updated.status === 'assigned') showToast('Delivery partner assigned');
       });
 
       Object.keys(cart).forEach(k=>delete cart[k]);
@@ -3028,28 +3033,11 @@
   /* =========================================================================
      LIVE TRACKING MODULE
      -------------------------------------------------------------------------
-     Drives the delivery-boy marker on the track screen. Structured as a tiny
-     pub/sub "fakeSocket" so swapping in a real socket.io connection later is
-     a small, contained change — replace `fakeSocket` with:
-
-       const socket = io('https://your-backend');
-       socket.on('deliveryBoy:location', ({lat,lng}) => liveTracking.onLocation(lat,lng));
-       socket.on('order:status', ({step}) => liveTracking.onStatus(step));
-
-     and remove the `startSimulatedFeed()` call below. The rider-side app
-     would emit with:
-       socket.emit('deliveryBoy:location', { orderId, lat, lng });
-     (see startForegroundLocationTracking() above, which already prepares
-     that payload on the rider's device.)
+     Drives the delivery-boy marker on the track screen from the real
+     socket.io connection (js/socket.js + js/orders.js). No simulation —
+     driver GPS comes from the backend's `driver:location` room broadcast,
+     and status/ETA comes from `order:status` (real Order document).
   ========================================================================= */
-  const fakeSocket = (function(){
-    const handlers = {};
-    return {
-      on(evt, fn){ (handlers[evt] = handlers[evt] || []).push(fn); },
-      emit(evt, payload){ (handlers[evt] || []).forEach(fn => fn(payload)); }
-    };
-  })();
-
   let trackMap = null, riderMarker = null, homeMarker = null, riderIcon = null, homeIcon = null, trackRouteLine = null;
   let trackFeedTimer = null, trackRouteIdx = 0, trackRoute = [];
   let myLiveMarker = null, myWatchId = null; // customer's own live GPS blue dot on the track screen
@@ -3168,65 +3156,90 @@
     return R * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1-s));
   }
 
+  // UI has 4 dots; map the backend's full status enum onto them.
+  // pending_acceptance (broadcast to nearby drivers, no one's accepted yet)
+  // reads the same as 'preparing' to the customer - order is being handled,
+  // just not moving yet. cancelled has no useful dot position.
   const trackSteps = ['placed', 'preparing', 'out', 'delivered'];
-  function setTrackStep(step){
+  const trackStepAlias = { pending_acceptance: 'preparing' };
+  function setTrackStep(status){
+    const step = trackStepAlias[status] || status;
+    const cur = trackSteps.indexOf(step);
     document.querySelectorAll('.track-step').forEach(el=>{
       const i = trackSteps.indexOf(el.dataset.step);
-      const cur = trackSteps.indexOf(step);
-      el.classList.toggle('done', i < cur);
-      el.classList.toggle('active', i === cur);
+      el.classList.toggle('done', cur >= 0 && i < cur);
+      el.classList.toggle('active', cur >= 0 && i === cur);
+    });
+    const pill = document.getElementById('trackEtaPill');
+    if(pill && status === 'cancelled') pill.textContent = 'Order cancelled';
+  }
+
+  // Destination for the currently-tracked order (customer's delivery address),
+  // set by beginLiveTracking() so the driver:location handler can compute
+  // live distance-remaining.
+  let trackDestination = null;
+
+  // Real driver GPS ping, forwarded from the backend's io.js
+  // `io.to('admins')...emit('driver:location', ...)` / order-room broadcast.
+  // Payload shape: { driverId, lat, lng, at }.
+  function handleDriverLocation({ lat, lng }){
+    if(!riderMarker || typeof lat !== 'number' || typeof lng !== 'number') return;
+    riderMarker.setLatLng([lat, lng]);
+    if(trackRouteLine) {
+      // Keep the drawn route trimmed to "remaining" by re-anchoring the
+      // start point to the rider's latest position.
+      const pts = trackRouteLine.getLatLngs();
+      if(pts.length) trackRouteLine.setLatLngs([[lat, lng], ...pts.slice(1)]);
+    }
+    if(trackDestination){
+      const distKm = haversineKm([lat, lng], trackDestination);
+      const distEl = document.getElementById('trackDist');
+      if(distEl) distEl.textContent = distKm.toFixed(1) + ' km';
+    }
+  }
+
+  // Real order-status push, from emit.js's orderStatusChanged() - full
+  // Order document (status, assigned, etc), not a synthetic {step} object.
+  function handleOrderStatus(order){
+    if(!order || !order.status) return;
+    setTrackStep(order.status);
+    const pill = document.getElementById('trackEtaPill');
+    if(pill && order.status !== 'cancelled'){
+      pill.textContent = order.status === 'delivered' ? 'Delivered'
+        : order.status === 'out' ? 'On the way'
+        : 'Preparing your order';
+    }
+  }
+
+  // Starts live tracking for a real placed order. `order` is the Order
+  // document returned by placeRealOrder(); destLatLng is [lat,lng] for the
+  // delivery address actually used on that order.
+  async function beginLiveTracking(order, destLatLng){
+    if(!order || !destLatLng) return;
+    trackDestination = destLatLng;
+
+    // Rider's starting position isn't known until the backend assigns a
+    // driver and that driver's first GPS ping arrives; show the delivery
+    // address as both ends until then so the map isn't empty.
+    const start = destLatLng;
+    initTrackMap(start, destLatLng);
+    setTrackStep(order.status || 'placed');
+
+    const pill = document.getElementById('trackEtaPill');
+    if(pill) pill.textContent = order.status === 'out' ? 'On the way' : 'Preparing your order';
+
+    window.PD_REAL_ORDERS.startTrackingOrder(order._id, {
+      onLocation: handleDriverLocation,
+      onStatus: handleOrderStatus,
+      onAssigned: (updated) => handleOrderStatus(updated)
     });
   }
-
-  fakeSocket.on('deliveryBoy:location', ({ lat, lng, destination }) => {
-    if(!riderMarker) return;
-    riderMarker.setLatLng([lat, lng]);
-    const distKm = haversineKm([lat, lng], destination);
-    const distEl = document.getElementById('trackDist');
-    if(distEl) distEl.textContent = distKm.toFixed(1) + ' km';
-  });
-  fakeSocket.on('order:status', ({ step, etaMinutes }) => {
-    setTrackStep(step);
-    const pill = document.getElementById('trackEtaPill');
-    if(pill) pill.textContent = step === 'delivered' ? 'Delivered' : etaMinutes + ' min away';
-  });
-
-  async function beginLiveTracking(totalEtaMinutes){
-    clearInterval(trackFeedTimer);
-    // Demo coordinates: rider starts ~2.5km from the (demo) delivery address.
-    const end = [19.0760, 72.8777];
-    const start = [19.0980, 72.9010];
-
-    initTrackMap(start, end); // shows immediately with a placeholder line while routing resolves
-    setTrackStep('placed');
-    setTimeout(()=> setTrackStep('preparing'), 1500);
-    setTimeout(()=> fakeSocket.emit('order:status', { step:'out', etaMinutes: totalEtaMinutes }), 4000);
-
-    // Real shortest road route - the animated rider now follows actual
-    // streets instead of a straight line, same as Google Maps navigation.
-    const roadRoute = await fetchRoadRoute(start, end);
-    trackRoute = roadRoute.points;
-    trackRouteIdx = 0;
-    const etaForAnimation = roadRoute.durationMin || totalEtaMinutes;
-
-    const tickMs = Math.max(600, (etaForAnimation * 60000) / trackRoute.length);
-    trackFeedTimer = setInterval(()=>{
-      if(trackRouteIdx >= trackRoute.length){
-        clearInterval(trackFeedTimer);
-        fakeSocket.emit('order:status', { step:'delivered', etaMinutes:0 });
-        return;
-      }
-      const [lat, lng] = trackRoute[trackRouteIdx];
-      // Real integration: this whole block is replaced by the socket.io
-      // 'deliveryBoy:location' listener registered above.
-      fakeSocket.emit('deliveryBoy:location', { lat, lng, destination: end });
-      const minsLeft = Math.max(1, Math.round(etaForAnimation * (1 - trackRouteIdx / trackRoute.length)));
-      const pill = document.getElementById('trackEtaPill');
-      if(pill) pill.textContent = minsLeft + ' min away';
-      trackRouteIdx++;
-    }, tickMs);
+  function stopLiveTracking(){
+    if(window.PD_REAL_ORDERS) window.PD_REAL_ORDERS.stopTrackingOrder();
+    trackDestination = null;
   }
-  window.beginLiveTracking = beginLiveTracking; // callable once a real order:outForDelivery event fires
+  window.beginLiveTracking = beginLiveTracking; // call with (order, [lat,lng]) once an order is placed
+  window.stopLiveTracking = stopLiveTracking;
 
 /* =========================================================
    TOP NAV SEARCH: expands smoothly from the search icon
