@@ -187,6 +187,23 @@ function wireActiveCardTracking(rail) {
   requestAnimationFrame(updateActive);
 }
 
+// Puts the featured / "Most Popular" plan first in the rail so it's the
+// one centered and shown big when the rail first renders, without
+// changing anything about how each card looks. Falls back to the plan's
+// tag text (case-insensitive "most popular") if `featured` isn't set,
+// since demo/admin data may only carry the tag. Leaves relative order of
+// every other card unchanged.
+function orderWithFeaturedFirst(plans) {
+  const isFeatured = p => p && (p.featured === true ||
+    (typeof p.tag === 'string' && p.tag.trim().toLowerCase() === 'most popular'));
+  const idx = plans.findIndex(isFeatured);
+  if (idx <= 0) return plans; // already first, or none found - no change
+  const copy = plans.slice();
+  const [featured] = copy.splice(idx, 1);
+  copy.unshift(featured);
+  return copy;
+}
+
 function renderRail() {
   const rail = document.getElementById('pkgRail');
   const dots = document.getElementById('pkgDots');
@@ -198,7 +215,8 @@ function renderRail() {
     return;
   }
 
-  rail.innerHTML = allPlans.map(planCardHtml).join('');
+  const orderedPlans = orderWithFeaturedFirst(allPlans);
+  rail.innerHTML = orderedPlans.map(planCardHtml).join('');
   renderDots(rail, dots, allPlans.length);
   wireActiveCardTracking(rail);
 
