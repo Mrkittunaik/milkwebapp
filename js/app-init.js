@@ -69,6 +69,7 @@ window.PD_REAL_ORDERS = {
   placeRealOrder,
   startTrackingOrder,
   stopTrackingOrder,
+  onMyOrdersChanged,
   fetchMyOrders
 };
 
@@ -107,6 +108,6 @@ window.PD_REAL_ORDERS = {
 
   // Keep "My Orders" screen fresh without the user pulling to refresh.
   onMyOrdersChanged(() => {
-    if (typeof window.renderOrdersScreen === 'function') window.renderOrdersScreen();
+    if (typeof window.renderOrderHistory === 'function') window.renderOrderHistory();
   });
 })();
