@@ -1764,7 +1764,14 @@
       orderDetails.phone = phone; // pre-fill checkout contact number
       completeLogin();
     } catch(err){
-      showToast(err.message || 'Could not save phone number');
+      // Backend returns 409 (or a message containing "already") when this
+      // phone number is already tied to a different account - show a clear,
+      // specific message instead of the generic fallback in that case.
+      const isDuplicate = err.status === 409 ||
+        /already/i.test(err.message || '');
+      showToast(isDuplicate
+        ? 'This number is already registered, please log in instead'
+        : (err.message || 'Could not save phone number'));
     }
   });
 
