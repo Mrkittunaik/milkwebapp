@@ -8,6 +8,13 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <link rel="stylesheet" href="style.css">
 <script>window.PD_API_BASE = "https://pakkabackend.onrender.com";</script>
+<!-- Google Sign-In: replace YOUR_CLIENT_ID_HERE below with the real OAuth
+     Client ID from https://console.cloud.google.com/apis/credentials
+     (Create OAuth Client ID -> Web application -> add this site's URL
+     under "Authorized JavaScript origins"). Nothing else needs to change -
+     js/auth.js already reads window.PD_GOOGLE_CLIENT_ID. -->
+<script>window.PD_GOOGLE_CLIENT_ID = "YOUR_CLIENT_ID_HERE";</script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
 
