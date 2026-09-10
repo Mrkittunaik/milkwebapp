@@ -10,12 +10,7 @@
 import { authApi, setToken, usersApi } from './api.js';
 import { connectSocket } from './socket.js';
 
-// Kept for the "bind phone after Google" step, since the backend's
-// dev-stage googleAuth still needs the googleId sent by the client
-// (see authController.js TODO to swap in real Google token verification).
-let pendingGoogleId = null;
-let pendingGoogleEmail = null;
-let pendingGoogleName = null;
+
 
 export async function sendOtp(phone) {
   return authApi.sendOtp(phone); // { ok, message, devHint? } - devHint only present when OTP_DEV_MODE=true
@@ -45,31 +40,21 @@ export function startGoogleSignIn(onCredential) {
   return true;
 }
 
-// Decodes the Google ID token client-side just to read the profile for
-// display before sending it to the backend. NOTE: this is NOT a security
-// check - the backend's TODO to verify the token server-side (via
-// google-auth-library) still needs doing before this goes to production;
-// until then the backend trusts whatever googleId the client sends.
-function decodeGoogleCredential(credential) {
-  const payload = JSON.parse(atob(credential.split('.')[1]));
-  return { googleId: payload.sub, email: payload.email, name: payload.name };
-}
-
+// The raw credential is a signed JWT from Google. We send it AS-IS to the
+// backend, which verifies its signature + audience against Google directly
+// (via google-auth-library) before trusting anything inside it. The
+// frontend never decodes or reads it - that would defeat the point of
+// server-side verification, since a browser value can always be edited.
 export async function completeGoogleLogin(credential) {
-  const { googleId, email, name } = decodeGoogleCredential(credential);
-  pendingGoogleId = googleId;
-  pendingGoogleEmail = email;
-  pendingGoogleName = name;
-
-  const res = await authApi.google(googleId, email, name); // { ok, token, user, needsPhone }
-  setToken(res.token);
+  const res = await authApi.google(credential); // { ok, token, user, needsPhone }
+  setToken(res.token); // token is issued even when needsPhone is true, so
+                        // bindPhone below can call the API as this user.
   if (!res.needsPhone) await connectSocket();
   return res; // caller checks res.needsPhone to decide whether to show the bind-phone step
 }
 
 export async function bindPhone(phone) {
-  if (!pendingGoogleId) throw new Error('No Google sign-in in progress');
-  const res = await authApi.bindPhone(pendingGoogleId, phone); // { ok, user } - matched by googleId, not JWT
+  const res = await authApi.bindPhone(phone); // identified by the JWT set above, not by an id we send
   await connectSocket();
   return res.user;
 }
