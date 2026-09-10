@@ -101,8 +101,10 @@ export const api = {
 export const authApi = {
   sendOtp: (phone) => api.post('/api/auth/send-otp', { phone }, { auth: false }),
   verifyOtp: (phone, code) => api.post('/api/auth/verify-otp', { phone, code }, { auth: false }),
-  google: (googleId, email, name) => api.post('/api/auth/google', { googleId, email, name }, { auth: false }),
-  bindPhone: (googleId, phone) => api.post('/api/auth/bind-phone', { googleId, phone }, { auth: false }),
+  google: (credential) => api.post('/api/auth/google', { credential }, { auth: false }),
+  // auth: true (default) — the backend now identifies the user from the JWT
+  // that /api/auth/google already returned, not from a client-sent id.
+  bindPhone: (phone) => api.post('/api/auth/bind-phone', { phone }),
   adminLogin: (email, password) => api.post('/api/auth/admin/login', { email, password }, { auth: false }),
   deliveryLogin: (phone, password) => api.post('/api/auth/delivery/login', { phone, password }, { auth: false }),
   deliveryRegister: (payload) => api.post('/api/auth/delivery/register', payload, { auth: false })
