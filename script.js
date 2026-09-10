@@ -1661,7 +1661,7 @@
   // phone number is entered, or the instant Google auth succeeds. No SMS,
   // no backend OTP call. Flip this back to false to restore real OTP
   // verification and mandatory phone binding before going to production.
-  const SKIP_OTP_VERIFICATION_DEV_MODE = true;
+  const SKIP_OTP_VERIFICATION_DEV_MODE = false;
 
   function openLoginGate(onSuccess){
     pendingAuthAction = typeof onSuccess === 'function' ? onSuccess : null;
