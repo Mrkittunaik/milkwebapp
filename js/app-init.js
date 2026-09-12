@@ -13,7 +13,7 @@
 
 import { isLoggedIn, getTokenUserId, usersApi } from './api.js';
 import { connectSocket } from './socket.js';
-import { initProducts, getProductById } from './products.js';
+import { initProducts, getProductById, searchProducts, setSearchTerm, highlightInHomeRail } from './products.js';
 import { initPlans, getPlanById } from './plan.js';
 import { initBanners } from './banners.js';
 import { initNotifications, requestPushPermission } from './notifications.js';
@@ -51,6 +51,10 @@ initPlans({
 
 // ---- Home banners: fetch from admin-managed banners, live over sockets ----
 initBanners();
+
+// ---- Search: expose real product search to script.js's top-nav search
+// box (see the TOP NAV SEARCH block at the bottom of script.js). ----
+window.PD_SEARCH = { searchProducts, setSearchTerm, highlightInHomeRail };
 
 // ---- Auth: expose real calls for script.js's existing button handlers
 // to call instead of the mock timeouts. See index.html/script.js patch
