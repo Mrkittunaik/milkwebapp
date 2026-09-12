@@ -86,6 +86,8 @@
     }
   }
 
+  window.goToScreen = goToScreen; // exposed for js/products.js search-result jump
+
   document.querySelectorAll('.nav-item[data-screen]').forEach(item=>{
     item.addEventListener('click', ()=> {
       goToScreen(item.dataset.screen);
@@ -438,6 +440,70 @@
   }
 
   /* =========================================================
+     AUTO LOCATION PROMPT ON INTERACTION
+     -------------------------------------------------------------------------
+     Asks for exact GPS as soon as the app opens, and — as long as the user
+     hasn't hit the browser's hard "Block" (a real OS/browser security wall
+     that JS genuinely cannot re-trigger; only the person can flip it back
+     in their browser/phone settings) — keeps re-asking the next time they
+     tap a product "+" or any primary button, instead of silently giving up
+     after one dismissal.
+  ========================================================= */
+  let locationRequestInFlight = false;
+  let lastBlockedToastAt = 0;
+
+  function ensureLiveLocationOnInteraction(){
+    if(!navigator.geolocation) return;
+    if(window.PD_LOC_PERMISSION === 'granted') return; // already have it, nothing to do
+    if(locationRequestInFlight) return;
+
+    if(window.PD_LOC_PERMISSION === 'denied'){
+      // Can't force the native prompt back open once truly blocked - that's
+      // a browser security restriction, not something this app controls.
+      // Just remind them where to fix it, and don't spam it on every tap.
+      const now = Date.now();
+      if(now - lastBlockedToastAt > 8000){
+        lastBlockedToastAt = now;
+        showToast('Location is blocked — enable it in browser/site settings for exact delivery');
+      }
+      return;
+    }
+
+    locationRequestInFlight = true;
+    navigator.geolocation.getCurrentPosition(
+      (pos)=>{
+        locationRequestInFlight = false;
+        window.PD_LOC_PERMISSION = 'granted';
+        const { latitude, longitude } = pos.coords;
+        reverseGeocode(latitude, longitude).then(label => setDeliveryAddress(label));
+      },
+      (err)=>{
+        locationRequestInFlight = false;
+        if(err && err.code === 1) window.PD_LOC_PERMISSION = 'denied';
+        // code 2/3 (unavailable/timeout): leave state as-is so the very
+        // next tap tries again instead of getting permanently stuck.
+      },
+      { enableHighAccuracy:true, timeout:15000, maximumAge:60000 }
+    );
+  }
+  window.ensureLiveLocationOnInteraction = ensureLiveLocationOnInteraction;
+
+  // Ask once right away on load (this is the earliest point a real
+  // getCurrentPosition call can trigger the native prompt - it can't be
+  // fired proactively before any geolocation call).
+  ensureLiveLocationOnInteraction();
+
+  // ...and again on the next tap of any product "+"/stepper or primary
+  // button, for as long as permission is still undecided/blocked, so the
+  // ask doesn't just happen once and get forgotten.
+  document.addEventListener('click', (e)=>{
+    if(window.PD_LOC_PERMISSION === 'granted') return;
+    if(e.target.closest('.prod-add, .prod-step-btn, .pkg-btn, .nav-item, button')){
+      ensureLiveLocationOnInteraction();
+    }
+  }, true);
+
+  /* =========================================================
      RIPPLE EFFECT for .ripple buttons
   ========================================================= */
   document.querySelectorAll('.ripple').forEach(btn=>{
@@ -786,7 +852,7 @@
     addrLabel.innerHTML = text;
     if(payAddr) payAddr.innerHTML = text;
     const settingsAddr = document.querySelector('.settings-row-label');
-    if(settingsAddr) settingsAddr.textContent = text.replace(/<[^>]+>/g,'');
+    if(settingsAddr) settingsAddr.innerHTML = text.replace(/<[^>]+>/g,'');
   }
 
   // Compass direction from the delivery pin to a nearby reference point
@@ -3244,12 +3310,22 @@
    TOP NAV SEARCH: expands smoothly from the search icon
    (replaces the old permanent search bar). Auto-focuses on
    open, auto-collapses on outside click / blur when empty.
+
+   Actually wired to real products now (js/products.js via
+   window.PD_SEARCH, set up in js/app-init.js):
+   - Typing shows a live suggestion dropdown + filters the
+     Products grid if that screen is already open.
+   - Picking a result (click or Enter): if it's on Home's
+     "Fresh Today" rail, scroll/highlight it right there;
+     otherwise jump to the Products screen, select its
+     category chip, and filter+highlight it there.
 ========================================================= */
 document.addEventListener('DOMContentLoaded', () => {
   const wrap = document.getElementById('navSearchWrap');
   const btn = document.getElementById('navSearchBtn');
   const input = document.getElementById('navSearchInput');
   const closeBtn = document.getElementById('navSearchCloseBtn');
+  const suggestBox = document.getElementById('navSearchSuggest');
   if (!wrap || !btn || !input) return;
 
   function openSearch() {
@@ -3259,7 +3335,112 @@ document.addEventListener('DOMContentLoaded', () => {
   function closeSearch() {
     wrap.classList.remove('open');
     input.blur();
+    hideSuggestions();
   }
+
+  function hideSuggestions(){
+    if (suggestBox) { suggestBox.style.display = 'none'; suggestBox.innerHTML = ''; }
+  }
+
+  function currentScreenName(){
+    const active = document.querySelector('.screen.active');
+    return active ? active.id.replace('screen-', '') : null;
+  }
+
+  function selectCategoryChip(category){
+    document.querySelectorAll('#prodFilterRow .cat-chip').forEach(chip => {
+      if (chip.dataset.filter === category) chip.click();
+      else if (chip.dataset.filter === 'all' && !category) chip.click();
+    });
+  }
+
+  function highlightInProductsGrid(productId){
+    const grid = document.getElementById('prodGrid');
+    if (!grid) return;
+    const card = grid.querySelector(`.prod-card[data-id="${productId}"]`);
+    if (!card) return;
+    card.scrollIntoView({ behavior:'smooth', block:'center' });
+    card.classList.add('prod-search-hit');
+    setTimeout(()=> card.classList.remove('prod-search-hit'), 1600);
+  }
+
+  // Jumps to wherever a chosen product actually lives: stays on Home
+  // and highlights it if it's already showing in "Fresh Today", otherwise
+  // goes to the Products screen, filtered to it.
+  function goToSearchResult(product){
+    hideSuggestions();
+    if (!product) return;
+
+    if (currentScreenName() === 'home' && window.PD_SEARCH?.highlightInHomeRail(product._id)) {
+      closeSearch();
+      return;
+    }
+
+    if (typeof window.goToScreen === 'function') window.goToScreen('products');
+    selectCategoryChip(product.category);
+    window.PD_SEARCH?.setSearchTerm(product.name);
+    closeSearch();
+    setTimeout(() => highlightInProductsGrid(product._id), 60);
+  }
+
+  function renderSuggestions(matches, term){
+    if (!suggestBox) return;
+    if (!matches.length) {
+      suggestBox.innerHTML = `<div class="nss-empty">No products match "${term}"</div>`;
+      suggestBox.style.display = 'block';
+      return;
+    }
+    suggestBox.innerHTML = matches.map(p => `
+      <div class="nss-item" data-id="${p._id}">
+        <span>${p.name}</span>
+        <span class="nss-cat">${p.category || ''}</span>
+      </div>
+    `).join('');
+    suggestBox.style.display = 'block';
+    suggestBox.querySelectorAll('.nss-item').forEach(item => {
+      item.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const match = matches.find(p => p._id === item.dataset.id);
+        goToSearchResult(match);
+      });
+    });
+  }
+
+  let searchDebounce = null;
+  input.addEventListener('input', () => {
+    clearTimeout(searchDebounce);
+    const term = input.value.trim();
+
+    if (!term) {
+      hideSuggestions();
+      if (currentScreenName() === 'products') window.PD_SEARCH?.setSearchTerm('');
+      return;
+    }
+
+    searchDebounce = setTimeout(() => {
+      const matches = window.PD_SEARCH?.searchProducts(term) || [];
+      renderSuggestions(matches, term);
+      // Live-filter the grid too if we're already looking at Products,
+      // so search "auto filters" the screen as the user types.
+      if (currentScreenName() === 'products') window.PD_SEARCH?.setSearchTerm(term);
+    }, 180);
+  });
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      input.value = '';
+      window.PD_SEARCH?.setSearchTerm('');
+      closeSearch();
+      return;
+    }
+    if (e.key === 'Enter') {
+      const term = input.value.trim();
+      if (!term) return;
+      const matches = window.PD_SEARCH?.searchProducts(term) || [];
+      if (matches.length) goToSearchResult(matches[0]);
+      else showToast(`No products match "${term}"`);
+    }
+  });
 
   btn.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -3269,26 +3450,21 @@ document.addEventListener('DOMContentLoaded', () => {
   closeBtn?.addEventListener('click', (e) => {
     e.stopPropagation();
     input.value = '';
+    window.PD_SEARCH?.setSearchTerm('');
     closeSearch();
   });
 
   input.addEventListener('blur', () => {
-    // small delay so a tap on the close button still registers first
+    // small delay so a tap on a suggestion/close button still registers first
     setTimeout(() => {
       if (!input.value.trim()) closeSearch();
-    }, 120);
+    }, 150);
   });
 
   document.addEventListener('click', (e) => {
     if (wrap.classList.contains('open') && !wrap.contains(e.target)) {
       if (!input.value.trim()) closeSearch();
-    }
-  });
-
-  input.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
-      input.value = '';
-      closeSearch();
+      else hideSuggestions();
     }
   });
 });
