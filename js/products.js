@@ -15,6 +15,7 @@ const CACHE_KEY = 'pd_cache_products';
 
 let allProducts = [];      // last fetched list, kept fresh by socket events
 let currentFilter = 'all';
+let currentSearch = '';    // live text from the top-nav search box, filters the grid too
 let onAddToCart = null;    // injected by script.js so cart logic stays in one place
 
 // Reads whatever was fetched last time (from a previous visit) so the grid
@@ -231,13 +232,28 @@ function renderHomeFeaturedRail() {
   wireSteppers(rail);
 }
 
+// Case-insensitive match against name/desc/category/unit - shared by the
+// grid filter below and by the search-suggestions dropdown in script.js.
+function matchesSearch(p, q) {
+  if (!q) return true;
+  const needle = q.toLowerCase();
+  return (p.name && p.name.toLowerCase().includes(needle)) ||
+    (p.desc && p.desc.toLowerCase().includes(needle)) ||
+    (p.category && p.category.toLowerCase().includes(needle)) ||
+    (p.unit && p.unit.toLowerCase().includes(needle));
+}
+
 function renderGrid() {
   const grid = document.getElementById('prodGrid');
   if (!grid) return;
 
-  const visible = currentFilter === 'all' ? allProducts : allProducts.filter(p => p.category === currentFilter);
+  let visible = currentFilter === 'all' ? allProducts : allProducts.filter(p => p.category === currentFilter);
+  if (currentSearch) visible = visible.filter(p => matchesSearch(p, currentSearch));
+
   grid.innerHTML = visible.map(productCardHtml).join('') ||
-    `<div class="prod-empty">No products in this category right now.</div>`;
+    (currentSearch
+      ? `<div class="prod-empty">No products match "${currentSearch}"</div>`
+      : `<div class="prod-empty">No products in this category right now.</div>`);
   initCarousels(grid);
 
   // Re-wire add buttons every render since innerHTML replaced the elements.
@@ -343,4 +359,34 @@ export function getProductById(id) {
 
 export function getAllProducts() {
   return allProducts;
+}
+
+// Live suggestions for the search box as the user types - doesn't touch
+// the grid, just returns up to `limit` matches for a dropdown.
+export function searchProducts(term, limit = 6) {
+  const q = (term || '').trim();
+  if (!q) return [];
+  return allProducts.filter(p => matchesSearch(p, q)).slice(0, limit);
+}
+
+// Applies the term as an actual grid filter (combined with the category
+// chip) and re-renders. Call with '' to clear it.
+export function setSearchTerm(term) {
+  currentSearch = (term || '').trim();
+  renderGrid();
+}
+
+// If a searched-for product is already visible in the home "Fresh Today"
+// rail, scroll it into view and flash a highlight instead of navigating
+// away - matches the "search for ghee while on Home -> show it in Fresh
+// Today" behaviour. Returns true if it found and highlighted a card.
+export function highlightInHomeRail(productId) {
+  const rail = document.getElementById('homeFeaturedRail');
+  if (!rail) return false;
+  const card = rail.querySelector(`.prod-card[data-id="${productId}"]`);
+  if (!card) return false;
+  card.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+  card.classList.add('prod-search-hit');
+  setTimeout(() => card.classList.remove('prod-search-hit'), 1600);
+  return true;
 }
