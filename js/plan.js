@@ -203,6 +203,43 @@ function recenterFeaturedCard(rail, { smooth } = {}) {
   cards[1].scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', inline: 'center', block: 'nearest' });
 }
 
+// Auto-returns the rail to the featured (2nd) card 5s after the user
+// stops interacting with it - not a forward-cycling carousel, just
+// "wherever you leave it, it settles back on Most Popular after 5s of
+// no activity." Also fires once on a plain timer even without any
+// interaction, so if someone just leaves it sitting on this section it
+// still settles there.
+const AUTOPLAY_RETURN_DELAY_MS = 5000;
+
+function wireAutoplay(rail) {
+  if (rail.dataset.pkgAutoplayWired) return;
+  rail.dataset.pkgAutoplayWired = '1';
+
+  let timer = null;
+
+  const scheduleReturn = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      recenterFeaturedCard(rail, { smooth: true });
+    }, AUTOPLAY_RETURN_DELAY_MS);
+  };
+
+  // Any touch/drag/scroll on the rail restarts the 5s countdown, so it
+  // only snaps back once the user has actually left it alone for 5s -
+  // never mid-swipe.
+  ['touchstart', 'mousedown', 'wheel', 'scroll'].forEach(evt => {
+    rail.addEventListener(evt, scheduleReturn, { passive: true });
+  });
+
+  // Pause the countdown while the tab is hidden so it doesn't fire the
+  // instant you switch back after being away a while.
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) clearTimeout(timer); else scheduleReturn();
+  });
+
+  scheduleReturn();
+}
+
 // Puts the featured / "Most Popular" plan second in the rail (so there's
 // one card peeking on the left, the featured one centered, and more
 // peeking on the right when the rail first renders) without changing
@@ -242,6 +279,7 @@ function renderRail() {
   rail.innerHTML = orderedPlans.map(planCardHtml).join('');
   renderDots(rail, dots, allPlans.length);
   wireActiveCardTracking(rail);
+  wireAutoplay(rail);
 
   // Always return focus to the featured (2nd) card after any change to
   // the rail, instead of leaving it wherever the user last scrolled.
