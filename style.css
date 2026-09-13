@@ -332,7 +332,7 @@
   .pkg-rail-outer{position:relative;}
   .pkg-rail{
     display:flex; align-items:center; gap:12px; overflow-x:auto; scroll-snap-type:x mandatory;
-    padding:14px 22% 10px; margin:0 -2px;
+    padding:14px 22% 10px 14px; margin:0 -2px;
     -webkit-overflow-scrolling:touch; scrollbar-width:none;
   }
   .pkg-rail::-webkit-scrollbar{display:none;}
