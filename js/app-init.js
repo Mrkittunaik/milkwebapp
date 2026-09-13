@@ -16,6 +16,7 @@ import { connectSocket } from './socket.js';
 import { initProducts, getProductById, searchProducts, setSearchTerm, highlightInHomeRail } from './products.js';
 import { initPlans, getPlanById } from './plan.js';
 import { initBanners } from './banners.js';
+import { initLiveLocation } from './live-location.js';
 import { initNotifications, requestPushPermission } from './notifications.js';
 import { placeRealOrder, startTrackingOrder, stopTrackingOrder, onMyOrdersChanged, fetchMyOrders } from './orders.js';
 import { sendOtp, verifyOtp, completeGoogleLogin, bindPhone, startGoogleSignIn } from './auth.js';
@@ -51,6 +52,10 @@ initPlans({
 
 // ---- Home banners: fetch from admin-managed banners, live over sockets ----
 initBanners();
+
+// ---- Live location: exact GPS "you are here" dot on the home screen
+// (Zomato/Swiggy-style), independent of the checkout address picker. ----
+initLiveLocation();
 
 // ---- Search: expose real product search to script.js's top-nav search
 // box (see the TOP NAV SEARCH block at the bottom of script.js). ----
