@@ -56,6 +56,10 @@ initBanners();
 // box (see the TOP NAV SEARCH block at the bottom of script.js). ----
 window.PD_SEARCH = { searchProducts, setSearchTerm, highlightInHomeRail };
 
+// ---- Own profile: expose real update-profile call to script.js's Edit
+// Profile modal on the Account screen. ----
+window.PD_USER = { updateMe: usersApi.updateMe };
+
 // ---- Auth: expose real calls for script.js's existing button handlers
 // to call instead of the mock timeouts. See index.html/script.js patch
 // notes for the exact lines to swap. ----
