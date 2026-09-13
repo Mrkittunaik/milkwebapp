@@ -848,6 +848,63 @@
     if(e.target === locBackdrop) closeLocModal();
   });
 
+  // The Account screen's delivery-address row ("Home · Kittu Nagar")
+  // previously did nothing when tapped - wire it to the same location
+  // picker as the header's address row.
+  const settingsAddrRow = document.getElementById('settingsAddrRow');
+  if(settingsAddrRow) settingsAddrRow.addEventListener('click', openLocModal);
+
+  /* =========================================================
+     EDIT PROFILE: tapping the avatar/name on the Account screen
+     opens a small modal to edit name/email, saved via the real
+     PUT /api/users/me endpoint (window.PD_USER, from js/app-init.js).
+  ========================================================= */
+  const editProfileBackdrop = document.getElementById('editProfileBackdrop');
+  const editProfileCancelBtn = document.getElementById('editProfileCancelBtn');
+  const editProfileName = document.getElementById('editProfileName');
+  const editProfileEmail = document.getElementById('editProfileEmail');
+  const saveProfileBtn = document.getElementById('saveProfileBtn');
+  const saveProfileBtnText = document.getElementById('saveProfileBtnText');
+  const accountLoggedInView = document.getElementById('accountLoggedInView');
+
+  function openEditProfile(){
+    if(!userSession.loggedIn) return; // guests have nothing to edit yet - Login button handles that case
+    editProfileName.value = userSession.name || '';
+    editProfileEmail.value = userSession.email || '';
+    editProfileBackdrop.classList.add('show');
+  }
+  function closeEditProfile(){
+    editProfileBackdrop.classList.remove('show');
+  }
+  if(accountLoggedInView) accountLoggedInView.addEventListener('click', openEditProfile);
+  if(editProfileCancelBtn) editProfileCancelBtn.addEventListener('click', closeEditProfile);
+  if(editProfileBackdrop) editProfileBackdrop.addEventListener('click', (e)=>{
+    if(e.target === editProfileBackdrop) closeEditProfile();
+  });
+  if(saveProfileBtn) saveProfileBtn.addEventListener('click', async ()=>{
+    const name = editProfileName.value.trim();
+    if(!name){
+      showToast('Please enter your name');
+      return;
+    }
+    const email = editProfileEmail.value.trim();
+    saveProfileBtn.disabled = true;
+    saveProfileBtnText.textContent = 'Saving...';
+    try{
+      await window.PD_USER.updateMe({ name, email });
+      userSession.name = name;
+      userSession.email = email;
+      renderAccountScreen();
+      closeEditProfile();
+      showToast('Profile updated');
+    } catch(err){
+      showToast(err.message || 'Could not update profile, please try again');
+    } finally {
+      saveProfileBtn.disabled = false;
+      saveProfileBtnText.textContent = 'Save changes';
+    }
+  });
+
   function setDeliveryAddress(text){
     addrLabel.innerHTML = text;
     if(payAddr) payAddr.innerHTML = text;
