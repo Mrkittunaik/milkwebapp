@@ -188,12 +188,24 @@ export function startWatching() {
   ensureMap();
   setOverlay(true, 'Getting your exact location…');
 
-  // watchPosition (not getCurrentPosition) so the FIRST callback fires as
-  // soon as any fix (often a fast, rough one) is ready - typically 1-5s -
-  // and every fix after that keeps refining the same dot in place.
+  // Fire an explicit getCurrentPosition call FIRST. This is what actually
+  // triggers the browser/OS native "Allow location access?" prompt if the
+  // user hasn't answered yet - watchPosition alone can silently reuse an
+  // old permission/cache state left over from some other geolocation call
+  // elsewhere on the page and never visibly prompt again. maximumAge:0
+  // forces a brand-new GPS reading, never a cached one (this is exactly
+  // what was causing a stale/wrong-looking location before).
+  navigator.geolocation.getCurrentPosition(onFix, onError, {
+    enableHighAccuracy: true,
+    maximumAge: 0,
+    timeout: FIRST_FIX_TIMEOUT_MS
+  });
+
+  // Then keep a live watch running so the dot keeps refining after that
+  // first fix - also forced fresh every time, never cached.
   watchId = navigator.geolocation.watchPosition(onFix, onError, {
     enableHighAccuracy: true,
-    maximumAge: 5000, // ok to reuse a fix from the last 5s for a snappier first paint
+    maximumAge: 0,
     timeout: FIRST_FIX_TIMEOUT_MS
   });
 }
