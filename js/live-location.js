@@ -150,6 +150,7 @@ function setAccuracyBadge(accuracy) {
 function onFix(pos) {
   const { latitude, longitude, accuracy } = pos.coords;
 
+  window.PD_LOC_PERMISSION = 'granted';
   window.PD_LIVE_LOCATION = { lat: latitude, lng: longitude, accuracy, updatedAt: Date.now() };
   window.dispatchEvent(new CustomEvent('pd:live-location', { detail: window.PD_LIVE_LOCATION }));
 
@@ -169,6 +170,7 @@ function onFix(pos) {
 }
 
 function onError(err) {
+  if (err && err.code === 1) window.PD_LOC_PERMISSION = 'denied';
   if (hasFirstFix) return; // already have a dot on screen - a later timeout/error shouldn't wipe it
   let msg = 'Could not get your exact location';
   if (err && err.code === 1) msg = 'Location permission denied — enable it in browser/site settings';
