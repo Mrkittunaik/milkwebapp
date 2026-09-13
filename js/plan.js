@@ -159,63 +159,48 @@ function renderDots(rail, dotsEl, count) {
 // while scrolling (rAF-throttled) so the scale/opacity transition
 // feels smooth as cards slide toward/away from the middle, not just
 // a snap at the end.
-//
-// Exception: the very first card (the featured/"most popular" one,
-// since orderWithFeaturedFirst puts it first) sits flush against the
-// left edge now instead of centered - so while the rail is scrolled
-// all the way to the start, that first card is forced active/full-size
-// on its own merits rather than by centering math, so it's the
-// prominent "hero" card by default with no wasted left-hand gap.
 function wireActiveCardTracking(rail) {
   let ticking = false;
 
   const updateActive = () => {
     ticking = false;
-    const cards = rail.querySelectorAll('.pkg-card');
-    if (!cards.length) return;
-
-    if (rail.scrollLeft < 16) {
-      cards.forEach((card, i) => card.classList.toggle('is-active', i === 0));
-      return;
-    }
-
     const railRect = rail.getBoundingClientRect();
     const railCenter = railRect.left + railRect.width / 2;
     let closest = null;
     let closestDist = Infinity;
 
-    cards.forEach(card => {
+    rail.querySelectorAll('.pkg-card').forEach(card => {
       const r = card.getBoundingClientRect();
       const cardCenter = r.left + r.width / 2;
       const dist = Math.abs(cardCenter - railCenter);
       if (dist < closestDist) { closestDist = dist; closest = card; }
     });
 
-    cards.forEach(card => card.classList.toggle('is-active', card === closest));
+    rail.querySelectorAll('.pkg-card').forEach(card => card.classList.toggle('is-active', card === closest));
   };
 
   rail.addEventListener('scroll', () => {
     if (!ticking) { ticking = true; requestAnimationFrame(updateActive); }
   }, { passive: true });
 
-  // Run once after render so the first (featured/first) card starts big.
-  requestAnimationFrame(updateActive);
+  return updateActive;
 }
 
-// Puts the featured / "Most Popular" plan first in the rail so it's the
-// one centered and shown big when the rail first renders, without
-// changing anything about how each card looks. Falls back to the plan's
-// tag text (case-insensitive "most popular") if `featured` isn't set,
-// since demo/admin data may only carry the tag. Leaves relative order of
-// every other card unchanged.
-function orderWithFeaturedFirst(plans) {
+// Puts the featured / "Most Popular" plan second in the rail (so there's
+// one card peeking on the left, the featured one centered, and more
+// peeking on the right when the rail first renders) without changing
+// anything about how each card looks. Falls back to the plan's tag text
+// (case-insensitive "most popular") if `featured` isn't set, since
+// demo/admin data may only carry the tag. Leaves relative order of every
+// other card unchanged.
+function orderWithFeaturedSecond(plans) {
   const isFeatured = p => p && (p.featured === true ||
     (typeof p.tag === 'string' && p.tag.trim().toLowerCase() === 'most popular'));
   const idx = plans.findIndex(isFeatured);
-  if (idx <= 0) return plans; // already first, or none found - no change
+  if (idx === 1 || idx < 0 || plans.length < 2) return plans; // already 2nd, none found, or not enough cards to reorder
   const copy = plans.slice();
   const [featured] = copy.splice(idx, 1);
-  copy.unshift(featured);
+  copy.splice(1, 0, featured);
   return copy;
 }
 
@@ -230,10 +215,20 @@ function renderRail() {
     return;
   }
 
-  const orderedPlans = orderWithFeaturedFirst(allPlans);
+  const orderedPlans = orderWithFeaturedSecond(allPlans);
   rail.innerHTML = orderedPlans.map(planCardHtml).join('');
   renderDots(rail, dots, allPlans.length);
-  wireActiveCardTracking(rail);
+  const updateActive = wireActiveCardTracking(rail);
+
+  // Center the featured (2nd) card by default instead of leaving the
+  // rail scrolled to its natural start (which would center the 1st
+  // card instead). "auto" behavior, not "smooth" - this runs on every
+  // render/refresh, not just the first paint, so it shouldn't animate.
+  const cards = rail.querySelectorAll('.pkg-card');
+  if (cards[1]) {
+    cards[1].scrollIntoView({ behavior: 'auto', inline: 'center', block: 'nearest' });
+  }
+  requestAnimationFrame(updateActive);
 
   rail.querySelectorAll('.pkg-btn:not([disabled])').forEach(btn => {
     btn.addEventListener('click', (e) => {
