@@ -852,9 +852,11 @@
   function openLocModal(){
     locCurrentLabel.textContent = addrLabel.textContent;
     locBackdrop.classList.add('show');
+    if(window.PD_LIVE_LOC) window.PD_LIVE_LOC.start();
   }
   function closeLocModal(){
     locBackdrop.classList.remove('show');
+    if(window.PD_LIVE_LOC) window.PD_LIVE_LOC.stop();
   }
   if(addrRow) addrRow.addEventListener('click', openLocModal);
   if(locCancelBtn) locCancelBtn.addEventListener('click', closeLocModal);
