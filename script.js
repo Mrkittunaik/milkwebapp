@@ -767,12 +767,26 @@
 
     const selectedAddr = savedAddresses.find(a => a.id === orderDetails.addressId) || savedAddresses[0];
 
+    // Prefer the saved address's coordinates (user explicitly picked/edited
+    // that pin), but if it has none, fall back to the freshest exact GPS fix
+    // from the live-location widget (js/live-location.js) rather than
+    // sending no location at all.
+    const liveFix = window.PD_LIVE_LOCATION;
+    const orderLat = (selectedAddr && typeof selectedAddr.lat === 'number') ? selectedAddr.lat : (liveFix ? liveFix.lat : undefined);
+    const orderLng = (selectedAddr && typeof selectedAddr.lng === 'number') ? selectedAddr.lng : (liveFix ? liveFix.lng : undefined);
+    // Only meaningful when we actually used the live fix (a saved address's
+    // own accuracy, if any, is tracked separately on that address record).
+    const orderLocationAccuracy = (selectedAddr && typeof selectedAddr.lat === 'number')
+      ? (typeof selectedAddr.accuracy === 'number' ? selectedAddr.accuracy : undefined)
+      : (liveFix ? liveFix.accuracy : undefined);
+
     try{
       const order = await window.PD_REAL_ORDERS.placeRealOrder({
         cart,
         address: selectedAddr ? selectedAddr.full : '',
-        lat: selectedAddr ? selectedAddr.lat : undefined,
-        lng: selectedAddr ? selectedAddr.lng : undefined,
+        lat: orderLat,
+        lng: orderLng,
+        locationAccuracy: orderLocationAccuracy,
         paymentStatus: method === 'cod' ? 'cod' : 'paid',
         paymentRef: paymentRef || null
       });
@@ -789,7 +803,7 @@
       window.__trackedOrderId = order._id;
       const destLatLng = (typeof order.lat === 'number' && typeof order.lng === 'number')
         ? [order.lat, order.lng]
-        : (selectedAddr ? [selectedAddr.lat, selectedAddr.lng] : null);
+        : (typeof orderLat === 'number' && typeof orderLng === 'number' ? [orderLat, orderLng] : null);
       if(destLatLng) beginLiveTracking(order, destLatLng);
 
       window.PD_REAL_ORDERS.onMyOrdersChanged((updated) => {
