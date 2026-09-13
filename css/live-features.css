@@ -56,3 +56,71 @@
 }
 .offer-card-status.accepted { background: #e8f5ec; color: var(--green-dim); }
 .offer-card-status.failed { background: #fdeceA; color: var(--danger); }
+
+/* ---- Live GPS location card (homepage) ----
+   Zomato/Swiggy-style live pin: a small map showing the user's exact
+   real-time position, refining as GPS accuracy improves. Uses the same
+   --card/--line/--radius/--green/--muted/--ink tokens as the rest of
+   the app. */
+.live-loc-card {
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: 14px; overflow: hidden; margin-bottom: 14px;
+  box-shadow: 0 2px 10px rgba(43,36,16,.06);
+}
+.live-loc-map-wrap { position: relative; width: 100%; height: 150px; background: var(--card-hi); }
+.live-loc-map { width: 100%; height: 100%; }
+.live-loc-map-overlay {
+  position: absolute; inset: 0; z-index: 500;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 8px; padding: 14px; text-align: center;
+  background: rgba(255,255,255,.92); backdrop-filter: blur(2px);
+  transition: opacity .25s ease;
+}
+.live-loc-map-overlay.hidden { opacity: 0; pointer-events: none; }
+.live-loc-spinner {
+  width: 22px; height: 22px; border-radius: 50%;
+  border: 3px solid var(--line); border-top-color: var(--green);
+  animation: liveLocSpin .8s linear infinite;
+}
+.live-loc-map-overlay.no-spin .live-loc-spinner { display: none; }
+@keyframes liveLocSpin { to { transform: rotate(360deg); } }
+.live-loc-map-overlay span { font-size: 12.5px; color: var(--muted); font-weight: 600; max-width: 240px; }
+.live-loc-enable-btn {
+  margin-top: 2px; background: var(--green); color: #fff; border: none;
+  font-weight: 800; font-size: 12.5px; padding: 8px 16px; border-radius: 20px;
+  cursor: pointer;
+}
+.live-loc-enable-btn:active { transform: scale(.97); }
+.live-loc-info {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; padding: 10px 12px;
+}
+.live-loc-label { font-size: 13px; font-weight: 800; color: var(--ink); line-height: 1.3; }
+.live-loc-sub { font-size: 11.5px; color: var(--muted); margin-top: 1px; }
+.live-loc-accuracy {
+  flex-shrink: 0; font-size: 10.5px; font-weight: 800;
+  padding: 4px 9px; border-radius: 20px; white-space: nowrap;
+}
+.live-loc-accuracy.good { background: var(--green-light); color: var(--green-dim); }
+.live-loc-accuracy.ok   { background: #fff6e0; color: #a67a00; }
+.live-loc-accuracy.poor { background: #fdeceA; color: var(--danger); }
+
+/* The exact GPS dot itself: a Google-Maps-style pulsing blue dot with
+   a white ring, plus a translucent accuracy-radius circle drawn by
+   Leaflet (see js/live-location.js) sized in real meters to the
+   current GPS accuracy - shrinks live as the fix improves. */
+.live-loc-dot-icon { position: relative; width: 18px; height: 18px; }
+.live-loc-dot-icon .pulse {
+  position: absolute; inset: -9px; border-radius: 50%;
+  background: rgba(66,133,244,.35);
+  animation: liveLocPulse 1.8s ease-out infinite;
+}
+.live-loc-dot-icon .core {
+  position: absolute; inset: 3px; border-radius: 50%;
+  background: #4285F4; border: 2.5px solid #fff;
+  box-shadow: 0 0 0 1px rgba(0,0,0,.25), 0 1px 4px rgba(0,0,0,.35);
+}
+@keyframes liveLocPulse {
+  0%   { transform: scale(.4); opacity: .8; }
+  100% { transform: scale(1.6); opacity: 0; }
+}
