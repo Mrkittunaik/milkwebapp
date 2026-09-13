@@ -849,7 +849,15 @@
   function openLocModal(){
     locCurrentLabel.textContent = addrLabel.textContent;
     locBackdrop.classList.add('show');
-    if(window.PD_LIVE_LOC) window.PD_LIVE_LOC.start();
+    // NOTE: location is NOT requested here anymore. It used to auto-start
+    // the instant the popup opened, which silently fired its own
+    // getCurrentPosition call in the background - then tapping "Use my
+    // current location" below fired a SECOND, independent geolocation
+    // call. Two calls racing meant only the first one actually got to
+    // trigger the browser's native permission prompt, and the second
+    // could resolve with a different/stale-feeling reading. Now there is
+    // exactly ONE geolocation engine (js/live-location.js), and it only
+    // starts when the user explicitly taps the button below.
   }
   function closeLocModal(){
     locBackdrop.classList.remove('show');
@@ -1009,11 +1017,9 @@
   // Same "keep sampling until GPS-grade accuracy" approach used by the
   // detailed address form (detUseLocBtn below) - this quick top-bar
   // picker used to grab getCurrentPosition's very first fix, which on
-  // many phones is a fast but rough Wi-Fi/cell-tower estimate (often
-  // off by hundreds or thousands of meters) rather than real GPS.
-  const QUICK_LOC_TARGET_ACCURACY_M = 20;
-  const QUICK_LOC_ACCEPTABLE_ACCURACY_M = 100;
-  const QUICK_LOC_MAX_WAIT_MS = 20000;
+  // Location capture (permission request, GPS watch, map dot) is now
+  // entirely owned by js/live-location.js / window.PD_LIVE_LOC - see the
+  // useLocBtn handler below.
 
   if(useLocBtn){
     useLocBtn.addEventListener('click', ()=>{
@@ -1024,7 +1030,6 @@
         return;
       }
       if(!announceLocationRequest()){
-        closeLocModal();
         return;
       }
       useLocBtn.classList.add('loading');
@@ -1033,67 +1038,45 @@
       spinner.className = 'spinner';
       useLocBtn.prepend(spinner);
 
-      let best = null;
-      let settled = false;
-      let watchId = null;
-      const startedAt = Date.now();
-
-      function finish(force){
-        if(settled) return;
-        if(!force && best && best.accuracy > QUICK_LOC_ACCEPTABLE_ACCURACY_M && (Date.now() - startedAt) < QUICK_LOC_MAX_WAIT_MS){
-          return; // keep waiting for a better fix - don't settle for a rough one yet
-        }
-        settled = true;
-        clearTimeout(maxWaitTimer);
-        if(watchId !== null){ navigator.geolocation.clearWatch(watchId); watchId = null; }
+      // Single geolocation engine: js/live-location.js. This button no
+      // longer runs its own separate watchPosition call - previously it
+      // did, which meant TWO independent GPS requests were racing each
+      // other any time the popup's map had already started on its own.
+      // window.PD_LIVE_LOC.start() draws the live dot on the map above
+      // AND is the one place a permission prompt/fresh GPS reading comes
+      // from. We just listen for its result here to close the modal and
+      // update the address text/button label.
+      function onLiveFix(e){
+        const { lat, lng, accuracy } = e.detail;
         useLocBtn.classList.remove('loading');
         useLocBtnText.textContent = 'Use my current location';
         spinner.remove();
+        window.removeEventListener('pd:live-location', onLiveFix);
 
-        if(!best){
-          setDeliveryAddress('Current &middot; Kondapur, Hyderabad');
-          closeLocModal();
-          showToast('Could not fetch live location — using Kondapur, Hyderabad');
-          return;
-        }
-
-        reverseGeocode(best.lat, best.lng).then(label=>{
+        reverseGeocode(lat, lng).then(label=>{
           setDeliveryAddress(label);
-          closeLocModal();
-          showToast(best.accuracy > QUICK_LOC_ACCEPTABLE_ACCURACY_M
-            ? `Location set (rough fix, \u00b1${Math.round(best.accuracy)}m) — adjust the exact address any time`
-            : `Delivery location updated (\u00b1${Math.round(best.accuracy)}m accuracy)`);
+          showToast(`Delivery location updated (\u00b1${Math.round(accuracy)}m accuracy)`);
         });
       }
+      window.addEventListener('pd:live-location', onLiveFix);
 
-      const maxWaitTimer = setTimeout(()=> finish(true), QUICK_LOC_MAX_WAIT_MS);
-
-      // watchPosition (not getCurrentPosition) so we get repeated fixes and
-      // can hold out for a real GPS-grade one instead of taking whatever
-      // arrives first. This is also what triggers the browser's native
-      // location-permission prompt the first time it's called.
-      watchId = navigator.geolocation.watchPosition((pos)=>{
-        const { latitude, longitude, accuracy } = pos.coords;
-        if(!best || accuracy < best.accuracy) best = { lat: latitude, lng: longitude, accuracy };
-        useLocBtnText.textContent = `Narrowing down location (\u00b1${Math.round(accuracy)}m)...`;
-        if(accuracy <= QUICK_LOC_TARGET_ACCURACY_M) finish(true);
-        else if(accuracy <= QUICK_LOC_ACCEPTABLE_ACCURACY_M) finish(false);
-      }, (err)=>{
-        settled = true;
-        clearTimeout(maxWaitTimer);
-        if(watchId !== null){ navigator.geolocation.clearWatch(watchId); watchId = null; }
+      // Timeout/no-permission fallback: if no fix arrives at all within a
+      // reasonable window, stop waiting instead of leaving the button
+      // stuck on "Requesting..." forever.
+      setTimeout(()=>{
+        if(!useLocBtn.classList.contains('loading')) return; // already resolved
+        window.removeEventListener('pd:live-location', onLiveFix);
         useLocBtn.classList.remove('loading');
         useLocBtnText.textContent = 'Use my current location';
         spinner.remove();
-        // Permission denied or unavailable -> sensible Hyderabad/Kondapur fallback
-        setDeliveryAddress('Current &middot; Kondapur, Hyderabad');
-        closeLocModal();
-        if(err && err.code === 1){
+        if(window.PD_LOC_PERMISSION === 'denied'){
           showToast('Location permission denied — turn it on in your browser/phone settings to use exact location');
         } else {
-          showToast('Could not fetch live location — using Kondapur, Hyderabad');
+          showToast('Could not fetch live location — check GPS/network and try again');
         }
-      }, { enableHighAccuracy:true, timeout:QUICK_LOC_MAX_WAIT_MS, maximumAge:0 });
+      }, 12000);
+
+      if(window.PD_LIVE_LOC) window.PD_LIVE_LOC.start();
     });
   }
 
