@@ -155,35 +155,52 @@ function renderDots(rail, dotsEl, count) {
 
 // Center-focused carousel: whichever card's center is closest to the
 // rail's own center gets .is-active (big/full-opacity); every other
-// card is the smaller/dimmed "peeking" side card. Runs continuously
-// while scrolling (rAF-throttled) so the scale/opacity transition
-// feels smooth as cards slide toward/away from the middle, not just
-// a snap at the end.
+// card is the smaller/dimmed "peeking" side card. Callable any time
+// (after a render, after a recenter-scroll, or from the scroll
+// listener itself) since it always reads the rail's current cards
+// fresh rather than closing over a stale list.
+function updateActiveCard(rail) {
+  const railRect = rail.getBoundingClientRect();
+  const railCenter = railRect.left + railRect.width / 2;
+  let closest = null;
+  let closestDist = Infinity;
+
+  rail.querySelectorAll('.pkg-card').forEach(card => {
+    const r = card.getBoundingClientRect();
+    const cardCenter = r.left + r.width / 2;
+    const dist = Math.abs(cardCenter - railCenter);
+    if (dist < closestDist) { closestDist = dist; closest = card; }
+  });
+
+  rail.querySelectorAll('.pkg-card').forEach(card => card.classList.toggle('is-active', card === closest));
+}
+
+// Wires the scroll listener exactly once per rail element (renderRail()
+// replaces the cards' innerHTML on every re-render/refresh, but the rail
+// element itself is reused - re-wiring on every render would otherwise
+// stack up duplicate listeners forever).
 function wireActiveCardTracking(rail) {
+  if (rail.dataset.pkgScrollWired) return;
+  rail.dataset.pkgScrollWired = '1';
+
   let ticking = false;
-
-  const updateActive = () => {
-    ticking = false;
-    const railRect = rail.getBoundingClientRect();
-    const railCenter = railRect.left + railRect.width / 2;
-    let closest = null;
-    let closestDist = Infinity;
-
-    rail.querySelectorAll('.pkg-card').forEach(card => {
-      const r = card.getBoundingClientRect();
-      const cardCenter = r.left + r.width / 2;
-      const dist = Math.abs(cardCenter - railCenter);
-      if (dist < closestDist) { closestDist = dist; closest = card; }
-    });
-
-    rail.querySelectorAll('.pkg-card').forEach(card => card.classList.toggle('is-active', card === closest));
-  };
-
   rail.addEventListener('scroll', () => {
-    if (!ticking) { ticking = true; requestAnimationFrame(updateActive); }
+    if (!ticking) {
+      ticking = true;
+      requestAnimationFrame(() => { ticking = false; updateActiveCard(rail); });
+    }
   }, { passive: true });
+}
 
-  return updateActive;
+// Scrolls the featured (2nd) card back to center - used both for the
+// very first render and to snap back to it any time the rail changes
+// afterwards (e.g. tapping Subscribe on some other, currently-centered
+// card): the plan is to always return focus to the featured card after
+// any interaction, rather than leaving the rail wherever it was left.
+function recenterFeaturedCard(rail, { smooth } = {}) {
+  const cards = rail.querySelectorAll('.pkg-card');
+  if (!cards[1]) return;
+  cards[1].scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', inline: 'center', block: 'nearest' });
 }
 
 // Puts the featured / "Most Popular" plan second in the rail (so there's
@@ -215,20 +232,21 @@ function renderRail() {
     return;
   }
 
+  // First render ever vs. a re-render after some interaction (Subscribe
+  // tapped, cart changed, catalog updated) - the former should just
+  // appear already centered; the latter should visibly snap back so the
+  // user sees it happen.
+  const isFirstRender = !rail.dataset.pkgScrollWired;
+
   const orderedPlans = orderWithFeaturedSecond(allPlans);
   rail.innerHTML = orderedPlans.map(planCardHtml).join('');
   renderDots(rail, dots, allPlans.length);
-  const updateActive = wireActiveCardTracking(rail);
+  wireActiveCardTracking(rail);
 
-  // Center the featured (2nd) card by default instead of leaving the
-  // rail scrolled to its natural start (which would center the 1st
-  // card instead). "auto" behavior, not "smooth" - this runs on every
-  // render/refresh, not just the first paint, so it shouldn't animate.
-  const cards = rail.querySelectorAll('.pkg-card');
-  if (cards[1]) {
-    cards[1].scrollIntoView({ behavior: 'auto', inline: 'center', block: 'nearest' });
-  }
-  requestAnimationFrame(updateActive);
+  // Always return focus to the featured (2nd) card after any change to
+  // the rail, instead of leaving it wherever the user last scrolled.
+  recenterFeaturedCard(rail, { smooth: !isFirstRender });
+  requestAnimationFrame(() => updateActiveCard(rail));
 
   rail.querySelectorAll('.pkg-btn:not([disabled])').forEach(btn => {
     btn.addEventListener('click', (e) => {
