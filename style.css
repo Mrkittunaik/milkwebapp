@@ -136,9 +136,9 @@
   }
   .nav-search-box input::placeholder{color:#B5A778;}
   .nav-search-suggest{
-    position:absolute; top:calc(100% + 8px); right:0;
-    width:min(78vw, 320px); background:#FFFFFF; border-radius:14px;
-    box-shadow:0 10px 26px rgba(0,0,0,.18); overflow:hidden; z-index:40;
+    position:fixed; /* escapes .topbar's overflow:hidden, which was clipping/garbling this */
+    background:#FFFFFF; border-radius:14px;
+    box-shadow:0 10px 26px rgba(0,0,0,.25); overflow:hidden; z-index:500;
   }
   .nav-search-suggest .nss-item{
     display:flex; align-items:center; justify-content:space-between; gap:10px;
