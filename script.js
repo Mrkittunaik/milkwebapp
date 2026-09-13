@@ -405,6 +405,7 @@
     clearTimeout(toastTimer);
     toastTimer = setTimeout(()=> t.classList.remove('show'), 2200);
   }
+  window.showToast = showToast; // exposed for js/live-location.js's low-accuracy warning
 
   /* =========================================================
      LOCATION PERMISSION STATUS
