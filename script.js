@@ -488,20 +488,17 @@
   }
   window.ensureLiveLocationOnInteraction = ensureLiveLocationOnInteraction;
 
-  // Ask once right away on load (this is the earliest point a real
-  // getCurrentPosition call can trigger the native prompt - it can't be
-  // fired proactively before any geolocation call).
-  ensureLiveLocationOnInteraction();
-
-  // ...and again on the next tap of any product "+"/stepper or primary
-  // button, for as long as permission is still undecided/blocked, so the
-  // ask doesn't just happen once and get forgotten.
-  document.addEventListener('click', (e)=>{
-    if(window.PD_LOC_PERMISSION === 'granted') return;
-    if(e.target.closest('.prod-add, .prod-step-btn, .pkg-btn, .nav-item, button')){
-      ensureLiveLocationOnInteraction();
-    }
-  }, true);
+  // NOTE: this used to auto-fire on page load and again on almost every
+  // click in the app (product +, nav taps, any button) with a stale
+  // maximumAge:60000 cache allowed. That's what was showing an old/wrong
+  // "demo-looking" location and quietly eating the permission prompt
+  // before the user ever tapped anything - the browser only shows the
+  // native "Allow location?" prompt ONCE per unresolved decision, so this
+  // silent background call was consuming it. Location is now requested
+  // explicitly and only from the "Update delivery location" popup (see
+  // openLocModal()/js/live-location.js), so the prompt fires exactly when
+  // the user taps to get their location, never before, and never with a
+  // cached fix.
 
   /* =========================================================
      RIPPLE EFFECT for .ripple buttons
