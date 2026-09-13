@@ -3342,6 +3342,18 @@ document.addEventListener('DOMContentLoaded', () => {
     if (suggestBox) { suggestBox.style.display = 'none'; suggestBox.innerHTML = ''; }
   }
 
+  // The dropdown is position:fixed (so it can escape .topbar's
+  // overflow:hidden, which was clipping/garbling it before) - so its
+  // position has to be set from the search box's actual screen location
+  // every time it's shown, instead of relying on CSS alone.
+  function positionSuggestions(){
+    if (!suggestBox) return;
+    const rect = (document.getElementById('navSearchBox') || wrap).getBoundingClientRect();
+    suggestBox.style.top = `${Math.round(rect.bottom + 8)}px`;
+    suggestBox.style.left = `${Math.round(rect.left)}px`;
+    suggestBox.style.width = `${Math.round(rect.width)}px`;
+  }
+
   function currentScreenName(){
     const active = document.querySelector('.screen.active');
     return active ? active.id.replace('screen-', '') : null;
@@ -3385,6 +3397,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function renderSuggestions(matches, term){
     if (!suggestBox) return;
+    positionSuggestions();
     if (!matches.length) {
       suggestBox.innerHTML = `<div class="nss-empty">No products match "${term}"</div>`;
       suggestBox.style.display = 'block';
@@ -3466,5 +3479,9 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!input.value.trim()) closeSearch();
       else hideSuggestions();
     }
+  });
+
+  window.addEventListener('resize', () => {
+    if (suggestBox && suggestBox.style.display === 'block') positionSuggestions();
   });
 });
