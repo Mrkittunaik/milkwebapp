@@ -586,7 +586,7 @@
 
   <!-- ACCOUNT SCREEN -->
   <div class="screen" id="screen-account">
-    <div class="account-header" id="accountLoggedInView">
+    <div class="account-header" id="accountLoggedInView" style="cursor:pointer;">
       <div class="account-avatar">K</div>
       <div>
         <div class="account-name">Kittu Rathod</div>
@@ -599,7 +599,7 @@
       <button class="pkg-btn ripple" id="accountLoginBtn" style="width:100%;">Login</button>
     </div>
     <div class="settings-group" id="accountSettingsGroup">
-      <div class="settings-row"><div class="settings-row-label">Home &middot; Kittu Nagar</div><div class="settings-row-sub">Delivery address</div></div>
+      <div class="settings-row" id="settingsAddrRow" style="cursor:pointer;"><div class="settings-row-label">Home &middot; Kittu Nagar</div><div class="settings-row-sub">Delivery address</div></div>
       <div class="settings-row" id="manageSubRow" data-goto="subscription"><div class="settings-row-label">Manage Subscriptions</div></div>
       <div class="settings-row" id="paymentMethodsRow" data-goto="paymethods"><div class="settings-row-label">Payment Methods</div></div>
       <div class="settings-row" id="orderHistoryRow" data-goto="orders"><div class="settings-row-label">Order History</div></div>
@@ -805,6 +805,20 @@
         <span id="useLocBtnText">Use my current location</span>
       </button>
       <button class="loc-cancel" id="locCancelBtn">Cancel</button>
+    </div>
+  </div>
+
+  <!-- EDIT PROFILE MODAL -->
+  <div class="loc-modal-backdrop" id="editProfileBackdrop">
+    <div class="loc-modal">
+      <h3>Edit profile</h3>
+      <p>Update your name and email. Your mobile number is used for login and can't be changed here.</p>
+      <input class="det-input" id="editProfileName" placeholder="Full name" style="margin-bottom:10px;">
+      <input class="det-input" id="editProfileEmail" type="email" placeholder="Email (optional)">
+      <button class="loc-btn" id="saveProfileBtn">
+        <span id="saveProfileBtnText">Save changes</span>
+      </button>
+      <button class="loc-cancel" id="editProfileCancelBtn">Cancel</button>
     </div>
   </div>
 
