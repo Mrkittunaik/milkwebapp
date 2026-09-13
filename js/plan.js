@@ -159,31 +159,46 @@ function renderDots(rail, dotsEl, count) {
 // while scrolling (rAF-throttled) so the scale/opacity transition
 // feels smooth as cards slide toward/away from the middle, not just
 // a snap at the end.
+//
+// Exception: the very first card (the featured/"most popular" one,
+// since orderWithFeaturedFirst puts it first) sits flush against the
+// left edge now instead of centered - so while the rail is scrolled
+// all the way to the start, that first card is forced active/full-size
+// on its own merits rather than by centering math, so it's the
+// prominent "hero" card by default with no wasted left-hand gap.
 function wireActiveCardTracking(rail) {
   let ticking = false;
 
   const updateActive = () => {
     ticking = false;
+    const cards = rail.querySelectorAll('.pkg-card');
+    if (!cards.length) return;
+
+    if (rail.scrollLeft < 16) {
+      cards.forEach((card, i) => card.classList.toggle('is-active', i === 0));
+      return;
+    }
+
     const railRect = rail.getBoundingClientRect();
     const railCenter = railRect.left + railRect.width / 2;
     let closest = null;
     let closestDist = Infinity;
 
-    rail.querySelectorAll('.pkg-card').forEach(card => {
+    cards.forEach(card => {
       const r = card.getBoundingClientRect();
       const cardCenter = r.left + r.width / 2;
       const dist = Math.abs(cardCenter - railCenter);
       if (dist < closestDist) { closestDist = dist; closest = card; }
     });
 
-    rail.querySelectorAll('.pkg-card').forEach(card => card.classList.toggle('is-active', card === closest));
+    cards.forEach(card => card.classList.toggle('is-active', card === closest));
   };
 
   rail.addEventListener('scroll', () => {
     if (!ticking) { ticking = true; requestAnimationFrame(updateActive); }
   }, { passive: true });
 
-  // Run once after render so the first (centered/first) card starts big.
+  // Run once after render so the first (featured/first) card starts big.
   requestAnimationFrame(updateActive);
 }
 
