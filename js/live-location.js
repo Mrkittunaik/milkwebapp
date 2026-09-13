@@ -26,8 +26,10 @@
    when a saved address has no coordinates yet.
 ========================================================= */
 
-const FIRST_FIX_TIMEOUT_MS = 6000; // don't make them wait past ~6s for even a rough first dot
+const FIRST_FIX_TIMEOUT_MS = 25000; // real GPS can take 10-30s to lock, especially indoors - don't cut it off early
 const GOOD_ENOUGH_ACCURACY_M = 15; // once we're this good, stop bothering to re-zoom aggressively
+const MAX_ACCEPTABLE_ACCURACY_M = 100; // above this it's network/cell-tower positioning, not real GPS - never show it as "your location"
+const SAFETY_VALVE_MS = 20000; // only force-show a rough fix after genuinely waiting for GPS to try
 
 let map = null;
 let dotMarker = null;
@@ -37,6 +39,10 @@ let addressDebounce = null;
 let hasFirstFix = false;
 
 function el(id) { return document.getElementById(id); }
+
+function showToastIfAvailable(msg) {
+  if (typeof window.showToast === 'function') window.showToast(msg);
+}
 
 function accuracyBadgeClass(acc) {
   if (acc <= 20) return 'good';
@@ -152,12 +158,17 @@ function onFix(pos, forceAccept) {
 
   const ageMs = Date.now() - pos.timestamp;
   const isStale = !forceAccept && ageMs > 10000;
-  const isTooRough = !forceAccept && !hasFirstFix && accuracy > 500;
+  // Never treat a network/cell-tower-level fix (hundreds to thousands of
+  // meters off, like the ±2000m "Vanasthalipuram" reading that triggered
+  // this bug report) as the user's real location - UNLESS forceAccept is
+  // set, which only happens from the safety valve below after genuinely
+  // waiting the full SAFETY_VALVE_MS for GPS to try and lock on.
+  const isTooRough = !forceAccept && accuracy > MAX_ACCEPTABLE_ACCURACY_M;
 
   if (isStale || isTooRough) {
     setOverlay(true, isStale
       ? 'Ignoring an old cached position — getting a fresh live fix…'
-      : `Refining your location… (±${Math.round(accuracy)}m so far)`);
+      : `Waiting for GPS lock… (network fix only: ±${Math.round(accuracy)}m, need better)`);
     return; // don't draw/commit this one - wait for the next callback
   }
 
@@ -166,8 +177,11 @@ function onFix(pos, forceAccept) {
   window.dispatchEvent(new CustomEvent('pd:live-location', { detail: window.PD_LIVE_LOCATION }));
 
   drawFix(latitude, longitude, accuracy);
-  setOverlay(false); // first genuinely fresh fix in hand - drop the "getting location" cover
+  setOverlay(false); // fix accepted - drop the "getting location" cover
   setAccuracyBadge(accuracy);
+  if (accuracy > MAX_ACCEPTABLE_ACCURACY_M) {
+    showToastIfAvailable(`Only got a rough network fix (±${Math.round(accuracy)}m) — move outdoors or check GPS is on for an exact position`);
+  }
   hasFirstFix = true;
 
   // Reverse-geocode a human-readable label, debounced so rapid GPS ticks
@@ -217,14 +231,19 @@ export function startWatching() {
     { enableHighAccuracy: true, maximumAge: 0, timeout: FIRST_FIX_TIMEOUT_MS }
   );
 
-  // Safety valve: if every single fix so far has been rejected as stale
-  // or too rough (rare, but possible on a phone with poor signal), stop
-  // waiting after a few seconds and just show the best one we've seen
-  // rather than leaving the popup stuck on "Getting your location...".
+  // Safety valve: only fires after genuinely waiting SAFETY_VALVE_MS
+  // (20s) for real GPS to lock. If every fix in that window was rejected
+  // as too rough (phone genuinely can't get better than network-level
+  // positioning - e.g. GPS hardware issue, deep indoors, airplane mode
+  // quirks), show the best one we've got with an honest low-accuracy
+  // label rather than spinning forever. This is deliberately generous -
+  // the earlier version fired at 8s, which is not enough time for real
+  // GPS to lock and was force-showing ±2000m network fixes as if they
+  // were the user's actual location.
   setTimeout(() => {
     if (hasFirstFix || !bestSoFar) return;
-    onFix(bestSoFar, true); // forceAccept: show it even if stale/rough rather than nothing
-  }, 8000);
+    onFix(bestSoFar, true); // forceAccept: skip the staleness check only, still show honestly
+  }, SAFETY_VALVE_MS);
 }
 
 export function stopWatching() {
