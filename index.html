@@ -138,29 +138,6 @@
   <!-- SCREENS -->
   <div class="screen active" id="screen-home">
 
-    <!-- LIVE GPS LOCATION CARD — Zomato/Swiggy-style exact live pin.
-         Shows the user's real-time position (not IP/city-level) once
-         permission is granted, refining continuously via watchPosition
-         until a GPS-grade fix (a few meters) is reached. Wired up by
-         js/live-location.js. -->
-    <div class="live-loc-card" id="liveLocCard">
-      <div class="live-loc-map-wrap">
-        <div id="liveLocMap" class="live-loc-map"></div>
-        <div class="live-loc-map-overlay" id="liveLocOverlay">
-          <div class="live-loc-spinner"></div>
-          <span id="liveLocOverlayText">Turn on location for exact delivery tracking</span>
-          <button class="live-loc-enable-btn" id="liveLocEnableBtn" type="button">Enable exact location</button>
-        </div>
-      </div>
-      <div class="live-loc-info">
-        <div class="live-loc-info-left">
-          <div class="live-loc-label" id="liveLocLabel">Detecting your location…</div>
-          <div class="live-loc-sub" id="liveLocSub">Waiting for permission</div>
-        </div>
-        <div class="live-loc-accuracy" id="liveLocAccuracy" style="display:none;"></div>
-      </div>
-    </div>
-
     <!-- CATEGORY RAIL — auto scrolling -->
     <div class="cat-rail-outer">
       <div class="cat-rail" id="catRail">
@@ -820,6 +797,19 @@
     <div class="loc-modal">
       <h3>Update delivery location</h3>
       <p>We'll use your device's live location to find the nearest Pakka Doodhwala delivery hub.</p>
+
+      <!-- Live exact GPS dot — appears the instant a fix comes in (~1-5s),
+           then keeps quietly refining. Wired by js/live-location.js. -->
+      <div class="live-loc-map-wrap" id="liveLocMapWrap">
+        <div id="liveLocMap" class="live-loc-map"></div>
+        <div class="live-loc-map-overlay" id="liveLocOverlay">
+          <div class="live-loc-spinner"></div>
+          <span id="liveLocOverlayText">Getting your exact location…</span>
+          <button class="live-loc-enable-btn" id="liveLocEnableBtn" type="button" style="display:none;">Enable exact location</button>
+        </div>
+        <div class="live-loc-accuracy" id="liveLocAccuracy" style="display:none;"></div>
+      </div>
+
       <div class="loc-current">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3A3110" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
         <span id="locCurrentLabel">Home &middot; Kittu Nagar</span>
