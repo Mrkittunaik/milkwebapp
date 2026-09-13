@@ -1,36 +1,40 @@
 /* =========================================================
-   LIVE LOCATION (homepage GPS dot)
+   LIVE LOCATION (location popup map)
    -------------------------------------------------------------------------
-   Shows the customer's EXACT real-time position on a small live map on
-   the home screen, the way Zomato/Swiggy/Google Maps show "you are here":
+   Shows the customer's EXACT real-time position inside the "Update
+   delivery location" popup (#locBackdrop), Google Maps/Zomato-style:
 
-     - Uses navigator.geolocation.watchPosition (continuous), not a single
-       getCurrentPosition call, so the fix keeps refining after the first
-       (often rough, Wi-Fi/cell-tower based) reading.
-     - enableHighAccuracy:true asks the device for real GPS chip data, not
-       just network-based approximation.
-     - Draws a real accuracy circle in METERS (not a fixed pixel size) so
-       what's on screen honestly represents current GPS uncertainty - a
-       50m accuracy circle actually covers 50m on the map regardless of
-       zoom, and visibly shrinks as accuracy improves toward the ~1-5m a
-       good outdoor GPS fix gives.
-     - The dot itself is a pulsing "blue dot" exactly like Google Maps'
-       own live-location marker.
+     - FAST FIRST FIX: shows the dot the moment ANY fix arrives (typically
+       1-5s), instead of waiting for a perfect GPS lock. A quick low-accuracy
+       fix is way better than a blank map for 15-20 seconds.
+     - Then keeps refining silently in the background via watchPosition -
+       the dot and accuracy ring update live as the fix improves, without
+       blocking or re-showing the "getting location" spinner.
+     - enableHighAccuracy:true still asks the device for real GPS chip
+       data (not just network approximation), it just doesn't WAIT for it
+       before showing something.
+     - Accuracy circle is drawn in real meters (Leaflet's L.circle takes
+       radius in meters directly), so it honestly shrinks as the fix
+       improves rather than being a fixed decorative size.
+
+   Runs only while the location popup is open: starts on openLocModal(),
+   stops (clears the GPS watch) on close, so it isn't burning
+   battery/GPS in the background the rest of the time.
 
    Exposes window.PD_LIVE_LOCATION = { lat, lng, accuracy, updatedAt } so
-   order placement (script.js / orders.js) can use the freshest possible
-   fix as a fallback if a saved address has no coordinates yet.
+   order placement (script.js) can use the freshest fix as a fallback
+   when a saved address has no coordinates yet.
 ========================================================= */
 
-const TARGET_ACCURACY_M = 15;   // "GPS-grade" - stop treating the fix as "still narrowing" once this good
-const MIN_ZOOM_FOR_DOT = 17;
+const FIRST_FIX_TIMEOUT_MS = 6000; // don't make them wait past ~6s for even a rough first dot
+const GOOD_ENOUGH_ACCURACY_M = 15; // once we're this good, stop bothering to re-zoom aggressively
 
 let map = null;
 let dotMarker = null;
 let accuracyCircle = null;
 let watchId = null;
-let bestAccuracySoFar = Infinity;
 let addressDebounce = null;
+let hasFirstFix = false;
 
 function el(id) { return document.getElementById(id); }
 
@@ -42,7 +46,7 @@ function accuracyBadgeClass(acc) {
 
 // Lightweight reverse geocode (OpenStreetMap Nominatim - same free service
 // script.js already uses for the checkout address picker), scoped to this
-// module so it works standalone without depending on script.js internals.
+// module so it works standalone.
 async function reverseGeocode(lat, lng) {
   try {
     const res = await fetch(
@@ -62,7 +66,7 @@ async function reverseGeocode(lat, lng) {
 
 function buildDotIcon() {
   return L.divIcon({
-    className: '', // avoid Leaflet's default marker box/shadow
+    className: '',
     html: `<div class="live-loc-dot-icon"><div class="pulse"></div><div class="core"></div></div>`,
     iconSize: [18, 18],
     iconAnchor: [9, 9]
@@ -82,31 +86,20 @@ function ensureMap() {
     touchZoom: true,
     doubleClickZoom: false,
     tap: false
-  }).setView([20.5937, 78.9629], 5); // default: India, until first fix arrives
+  }).setView([20.5937, 78.9629], 5);
 
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19
-  }).addTo(map);
-
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
   return map;
 }
 
-// Converts a metre radius to something Leaflet's L.circle already handles
-// natively (it takes radius in meters directly) - kept as a named helper
-// only so the "why meters, not pixels" reasoning has one place to live.
 function drawFix(lat, lng, accuracy) {
   const m = ensureMap();
   if (!m) return;
-
   const latlng = [lat, lng];
 
   if (!accuracyCircle) {
     accuracyCircle = L.circle(latlng, {
-      radius: accuracy,
-      color: '#4285F4',
-      weight: 1,
-      fillColor: '#4285F4',
-      fillOpacity: 0.12
+      radius: accuracy, color: '#4285F4', weight: 1, fillColor: '#4285F4', fillOpacity: 0.12
     }).addTo(m);
   } else {
     accuracyCircle.setLatLng(latlng);
@@ -119,146 +112,105 @@ function drawFix(lat, lng, accuracy) {
     dotMarker.setLatLng(latlng);
   }
 
-  // Zoom in as the fix improves so the exact dot (not a wide city view) is
-  // what's on screen once GPS has locked on - mirrors how Google Maps'
-  // blue dot snaps to a tight zoom once it gets a real fix.
-  const targetZoom = accuracy <= TARGET_ACCURACY_M ? 18 : accuracy <= 75 ? 16 : 14;
-  m.setView(latlng, Math.max(targetZoom, MIN_ZOOM_FOR_DOT - 2), { animate: true });
+  // Zoom straight to a usable street-level view on the very first fix
+  // (no slow city->street animation), then just re-center quietly as it
+  // improves.
+  const targetZoom = accuracy <= GOOD_ENOUGH_ACCURACY_M ? 18 : accuracy <= 100 ? 16 : 14;
+  if (!hasFirstFix) {
+    m.setView(latlng, targetZoom, { animate: false });
+  } else {
+    m.setView(latlng, Math.max(m.getZoom(), targetZoom), { animate: true });
+  }
+
+  // Popup can be sized 0x0 if it just became visible - force Leaflet to
+  // recalc so tiles actually render instead of showing a gray box.
+  requestAnimationFrame(() => m.invalidateSize());
 }
 
-function setOverlay({ show, spinning = true, text }) {
+function setOverlay(show, text) {
   const overlay = el('liveLocOverlay');
   const overlayText = el('liveLocOverlayText');
-  const enableBtn = el('liveLocEnableBtn');
   if (!overlay) return;
   overlay.classList.toggle('hidden', !show);
-  overlay.classList.toggle('no-spin', !spinning);
   if (overlayText && text) overlayText.textContent = text;
-  if (enableBtn) enableBtn.style.display = spinning ? 'none' : (show ? 'inline-block' : 'none');
 }
 
-function updateInfoPanel({ label, sub, accuracy }) {
-  const labelEl = el('liveLocLabel');
-  const subEl = el('liveLocSub');
+function setAccuracyBadge(accuracy) {
   const accEl = el('liveLocAccuracy');
-  if (labelEl && label) labelEl.textContent = label;
-  if (subEl && sub !== undefined) subEl.textContent = sub;
-  if (accEl) {
-    if (typeof accuracy === 'number') {
-      accEl.style.display = 'inline-block';
-      accEl.className = `live-loc-accuracy ${accuracyBadgeClass(accuracy)}`;
-      accEl.textContent = `±${Math.round(accuracy)}m`;
-    } else {
-      accEl.style.display = 'none';
-    }
+  if (!accEl) return;
+  if (typeof accuracy === 'number') {
+    accEl.style.display = 'inline-block';
+    accEl.className = `live-loc-accuracy ${accuracyBadgeClass(accuracy)}`;
+    accEl.textContent = `±${Math.round(accuracy)}m`;
+  } else {
+    accEl.style.display = 'none';
   }
 }
 
 function onFix(pos) {
   const { latitude, longitude, accuracy } = pos.coords;
 
-  window.PD_LIVE_LOCATION = {
-    lat: latitude,
-    lng: longitude,
-    accuracy,
-    updatedAt: Date.now()
-  };
+  window.PD_LIVE_LOCATION = { lat: latitude, lng: longitude, accuracy, updatedAt: Date.now() };
   window.dispatchEvent(new CustomEvent('pd:live-location', { detail: window.PD_LIVE_LOCATION }));
 
   drawFix(latitude, longitude, accuracy);
+  setOverlay(false); // first fix in hand - drop the "getting location" cover immediately
+  setAccuracyBadge(accuracy);
+  hasFirstFix = true;
 
-  const stillNarrowing = accuracy > TARGET_ACCURACY_M && accuracy < bestAccuracySoFar + 5;
-  bestAccuracySoFar = Math.min(bestAccuracySoFar, accuracy);
-
-  setOverlay({
-    show: stillNarrowing,
-    spinning: true,
-    text: `Getting your exact location… (±${Math.round(accuracy)}m)`
-  });
-
-  updateInfoPanel({
-    label: accuracy <= TARGET_ACCURACY_M ? 'You are here' : 'Locking your exact position…',
-    sub: 'Live GPS · updates automatically',
-    accuracy
-  });
-
-  // Reverse-geocode a human-readable label, but don't spam Nominatim on
-  // every single high-frequency GPS tick - debounce to once per fix burst.
+  // Reverse-geocode a human-readable label, debounced so rapid GPS ticks
+  // don't spam Nominatim.
   clearTimeout(addressDebounce);
   addressDebounce = setTimeout(async () => {
     const label = await reverseGeocode(latitude, longitude);
-    if (label) updateInfoPanel({ label, sub: `Live GPS · ±${Math.round(accuracy)}m`, accuracy });
-  }, 600);
+    const labelEl = el('locCurrentLabel');
+    if (label && labelEl) labelEl.textContent = label;
+  }, 500);
 }
 
 function onError(err) {
+  if (hasFirstFix) return; // already have a dot on screen - a later timeout/error shouldn't wipe it
   let msg = 'Could not get your exact location';
   if (err && err.code === 1) msg = 'Location permission denied — enable it in browser/site settings';
   else if (err && err.code === 2) msg = 'Location unavailable — check GPS/network and try again';
-  else if (err && err.code === 3) msg = 'Location request timed out — try again';
-
-  setOverlay({ show: true, spinning: false, text: msg });
-  updateInfoPanel({ label: 'Location unavailable', sub: 'Tap "Enable exact location" to retry', accuracy: null });
+  else if (err && err.code === 3) msg = 'Taking longer than usual — still trying…';
+  setOverlay(true, msg);
 }
 
-function startWatching() {
+export function startWatching() {
   if (!navigator.geolocation) {
-    setOverlay({ show: true, spinning: false, text: 'Geolocation is not supported on this device' });
+    setOverlay(true, 'Geolocation is not supported on this device');
     return;
   }
   if (watchId !== null) return; // already watching
 
-  bestAccuracySoFar = Infinity;
-  setOverlay({ show: true, spinning: true, text: 'Getting your exact location…' });
+  hasFirstFix = false;
+  ensureMap();
+  setOverlay(true, 'Getting your exact location…');
 
+  // watchPosition (not getCurrentPosition) so the FIRST callback fires as
+  // soon as any fix (often a fast, rough one) is ready - typically 1-5s -
+  // and every fix after that keeps refining the same dot in place.
   watchId = navigator.geolocation.watchPosition(onFix, onError, {
     enableHighAccuracy: true,
-    maximumAge: 0,   // never reuse a cached/stale fix - always the freshest reading
-    timeout: 20000
+    maximumAge: 5000, // ok to reuse a fix from the last 5s for a snappier first paint
+    timeout: FIRST_FIX_TIMEOUT_MS
   });
 }
 
-function stopWatching() {
+export function stopWatching() {
   if (watchId !== null) {
     navigator.geolocation.clearWatch(watchId);
     watchId = null;
   }
+  clearTimeout(addressDebounce);
 }
 
+// Called once from app-init.js. Doesn't start GPS itself - script.js's
+// openLocModal()/closeLocModal() call startWatching()/stopWatching() so
+// tracking only runs while the popup is actually open.
 export function initLiveLocation() {
-  const card = el('liveLocCard');
-  if (!card) return;
-
-  ensureMap();
-
-  const enableBtn = el('liveLocEnableBtn');
-  if (enableBtn) enableBtn.addEventListener('click', startWatching);
-
-  // If permission is already granted from an earlier visit, start tracking
-  // immediately without waiting for a tap (mirrors script.js's existing
-  // window.PD_LOC_PERMISSION check for the checkout flow).
-  if (navigator.permissions && navigator.permissions.query) {
-    navigator.permissions.query({ name: 'geolocation' }).then((status) => {
-      if (status.state === 'granted') startWatching();
-      status.onchange = () => {
-        if (status.state === 'granted') startWatching();
-      };
-    }).catch(() => {});
-  }
-
-  // Pause the GPS watch when the tab isn't visible (saves battery/data),
-  // resume when it's back - the dot picks up live again instantly since
-  // maximumAge:0 always asks for a fresh fix.
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden) stopWatching();
-    else if (window.PD_LIVE_LOCATION) startWatching();
-  });
-
-  // Leaflet needs a nudge to recalc size if its container was hidden
-  // (display:none) at the moment it was created, e.g. app starts on a
-  // different screen than Home.
-  const ro = new ResizeObserver(() => { if (map) map.invalidateSize(); });
-  ro.observe(card);
+  window.PD_LIVE_LOC = { start: startWatching, stop: stopWatching };
 }
 
 export function getLiveLocation() {
