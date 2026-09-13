@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="css/live-features.css">
 <script>window.PD_API_BASE = "https://pakkabackend.onrender.com";</script>
 <!-- Google Sign-In: replace YOUR_CLIENT_ID_HERE below with the real OAuth
      Client ID from https://console.cloud.google.com/apis/credentials
@@ -136,6 +137,29 @@
 
   <!-- SCREENS -->
   <div class="screen active" id="screen-home">
+
+    <!-- LIVE GPS LOCATION CARD — Zomato/Swiggy-style exact live pin.
+         Shows the user's real-time position (not IP/city-level) once
+         permission is granted, refining continuously via watchPosition
+         until a GPS-grade fix (a few meters) is reached. Wired up by
+         js/live-location.js. -->
+    <div class="live-loc-card" id="liveLocCard">
+      <div class="live-loc-map-wrap">
+        <div id="liveLocMap" class="live-loc-map"></div>
+        <div class="live-loc-map-overlay" id="liveLocOverlay">
+          <div class="live-loc-spinner"></div>
+          <span id="liveLocOverlayText">Turn on location for exact delivery tracking</span>
+          <button class="live-loc-enable-btn" id="liveLocEnableBtn" type="button">Enable exact location</button>
+        </div>
+      </div>
+      <div class="live-loc-info">
+        <div class="live-loc-info-left">
+          <div class="live-loc-label" id="liveLocLabel">Detecting your location…</div>
+          <div class="live-loc-sub" id="liveLocSub">Waiting for permission</div>
+        </div>
+        <div class="live-loc-accuracy" id="liveLocAccuracy" style="display:none;"></div>
+      </div>
+    </div>
 
     <!-- CATEGORY RAIL — auto scrolling -->
     <div class="cat-rail-outer">
