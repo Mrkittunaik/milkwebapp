@@ -147,15 +147,26 @@ function setAccuracyBadge(accuracy) {
   }
 }
 
-function onFix(pos) {
+function onFix(pos, forceAccept) {
   const { latitude, longitude, accuracy } = pos.coords;
+
+  const ageMs = Date.now() - pos.timestamp;
+  const isStale = !forceAccept && ageMs > 10000;
+  const isTooRough = !forceAccept && !hasFirstFix && accuracy > 500;
+
+  if (isStale || isTooRough) {
+    setOverlay(true, isStale
+      ? 'Ignoring an old cached position — getting a fresh live fix…'
+      : `Refining your location… (±${Math.round(accuracy)}m so far)`);
+    return; // don't draw/commit this one - wait for the next callback
+  }
 
   window.PD_LOC_PERMISSION = 'granted';
   window.PD_LIVE_LOCATION = { lat: latitude, lng: longitude, accuracy, updatedAt: Date.now() };
   window.dispatchEvent(new CustomEvent('pd:live-location', { detail: window.PD_LIVE_LOCATION }));
 
   drawFix(latitude, longitude, accuracy);
-  setOverlay(false); // first fix in hand - drop the "getting location" cover immediately
+  setOverlay(false); // first genuinely fresh fix in hand - drop the "getting location" cover
   setAccuracyBadge(accuracy);
   hasFirstFix = true;
 
@@ -187,29 +198,33 @@ export function startWatching() {
   if (watchId !== null) return; // already watching
 
   hasFirstFix = false;
+  let bestSoFar = null; // fallback if every fix keeps getting rejected as stale/rough
   ensureMap();
   setOverlay(true, 'Getting your exact location…');
 
-  // Fire an explicit getCurrentPosition call FIRST. This is what actually
-  // triggers the browser/OS native "Allow location access?" prompt if the
-  // user hasn't answered yet - watchPosition alone can silently reuse an
-  // old permission/cache state left over from some other geolocation call
-  // elsewhere on the page and never visibly prompt again. maximumAge:0
-  // forces a brand-new GPS reading, never a cached one (this is exactly
-  // what was causing a stale/wrong-looking location before).
-  navigator.geolocation.getCurrentPosition(onFix, onError, {
-    enableHighAccuracy: true,
-    maximumAge: 0,
-    timeout: FIRST_FIX_TIMEOUT_MS
-  });
+  // ONE geolocation engine only (watchPosition). Previously this fired
+  // BOTH getCurrentPosition and watchPosition at once "to be safe" -
+  // that's actually what caused two competing fixes to race each other.
+  // watchPosition alone already delivers its first callback immediately
+  // on virtually every browser, and is also what triggers the native
+  // permission prompt the first time it's called.
+  watchId = navigator.geolocation.watchPosition(
+    (pos) => {
+      if (!bestSoFar || pos.coords.accuracy < bestSoFar.coords.accuracy) bestSoFar = pos;
+      onFix(pos, false);
+    },
+    onError,
+    { enableHighAccuracy: true, maximumAge: 0, timeout: FIRST_FIX_TIMEOUT_MS }
+  );
 
-  // Then keep a live watch running so the dot keeps refining after that
-  // first fix - also forced fresh every time, never cached.
-  watchId = navigator.geolocation.watchPosition(onFix, onError, {
-    enableHighAccuracy: true,
-    maximumAge: 0,
-    timeout: FIRST_FIX_TIMEOUT_MS
-  });
+  // Safety valve: if every single fix so far has been rejected as stale
+  // or too rough (rare, but possible on a phone with poor signal), stop
+  // waiting after a few seconds and just show the best one we've seen
+  // rather than leaving the popup stuck on "Getting your location...".
+  setTimeout(() => {
+    if (hasFirstFix || !bestSoFar) return;
+    onFix(bestSoFar, true); // forceAccept: show it even if stale/rough rather than nothing
+  }, 8000);
 }
 
 export function stopWatching() {
