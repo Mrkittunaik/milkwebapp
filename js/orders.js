@@ -50,10 +50,10 @@ function attachGlobalListenersOnce() {
 
 // cart shape in: { [name]: { id, name, price, qty } } (script.js's existing cart object,
 // now expected to also carry a productId per item - see the cart.js patch notes)
-export async function placeRealOrder({ cart, address, lat, lng, couponCode, paymentStatus, paymentRef, slot }) {
+export async function placeRealOrder({ cart, address, lat, lng, locationAccuracy, couponCode, paymentStatus, paymentRef, slot }) {
   const items = Object.values(cart).map(item => ({ productId: item.id, qty: item.qty }));
   const order = await ordersApi.create({
-    items, address, lat, lng, couponCode, paymentStatus, paymentRef, slot
+    items, address, lat, lng, locationAccuracy, couponCode, paymentStatus, paymentRef, slot
   });
   return order; // full Order document from the backend, incl. real orderCode/total
 }
