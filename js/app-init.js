@@ -53,8 +53,10 @@ initPlans({
 // ---- Home banners: fetch from admin-managed banners, live over sockets ----
 initBanners();
 
-// ---- Live location: exact GPS "you are here" dot on the home screen
-// (Zomato/Swiggy-style), independent of the checkout address picker. ----
+// ---- Live location: exact GPS "you are here" dot inside the location
+// popup (opened by tapping the nav's "Delivering to" row). Only registers
+// the start/stop hooks here - script.js's openLocModal()/closeLocModal()
+// call them so GPS only runs while the popup is actually open. ----
 initLiveLocation();
 
 // ---- Search: expose real product search to script.js's top-nav search
