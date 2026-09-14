@@ -28,8 +28,10 @@
 
 const FIRST_FIX_TIMEOUT_MS = 25000; // real GPS can take 10-30s to lock, especially indoors - don't cut it off early
 const GOOD_ENOUGH_ACCURACY_M = 15; // once we're this good, stop bothering to re-zoom aggressively
-const MAX_ACCEPTABLE_ACCURACY_M = 100; // above this it's network/cell-tower positioning, not real GPS - never show it as "your location"
-const SAFETY_VALVE_MS = 20000; // only force-show a rough fix after genuinely waiting for GPS to try
+const MAX_ACCEPTABLE_ACCURACY_M = 40; // HARD FLOOR: 1-40m only. A network/cell-tower fix (hundreds/thousands of
+// meters, like the ±2000m reading that caused the last bug report) is NEVER accepted or shown as the user's
+// location - not on the first fix, not as a "best we could get" fallback, not ever. If real GPS can't get
+// under 40m, the popup keeps waiting and says so honestly instead of displaying a wrong-looking position.
 
 let map = null;
 let dotMarker = null;
@@ -39,10 +41,6 @@ let addressDebounce = null;
 let hasFirstFix = false;
 
 function el(id) { return document.getElementById(id); }
-
-function showToastIfAvailable(msg) {
-  if (typeof window.showToast === 'function') window.showToast(msg);
-}
 
 function accuracyBadgeClass(acc) {
   if (acc <= 20) return 'good';
@@ -153,22 +151,22 @@ function setAccuracyBadge(accuracy) {
   }
 }
 
-function onFix(pos, forceAccept) {
+function onFix(pos) {
   const { latitude, longitude, accuracy } = pos.coords;
 
   const ageMs = Date.now() - pos.timestamp;
-  const isStale = !forceAccept && ageMs > 10000;
-  // Never treat a network/cell-tower-level fix (hundreds to thousands of
-  // meters off, like the ±2000m "Vanasthalipuram" reading that triggered
-  // this bug report) as the user's real location - UNLESS forceAccept is
-  // set, which only happens from the safety valve below after genuinely
-  // waiting the full SAFETY_VALVE_MS for GPS to try and lock on.
-  const isTooRough = !forceAccept && accuracy > MAX_ACCEPTABLE_ACCURACY_M;
+  const isStale = ageMs > 10000;
+  // HARD FLOOR: never accept/show anything outside 1-40m. No exceptions,
+  // no timeout-based fallback to a rough fix - this is exactly what
+  // produced the ±2000m "Vanasthalipuram" bug before. If GPS can't get
+  // this good, the popup keeps waiting and says so, instead of showing a
+  // wrong-looking position.
+  const isTooRough = accuracy > MAX_ACCEPTABLE_ACCURACY_M;
 
   if (isStale || isTooRough) {
     setOverlay(true, isStale
       ? 'Ignoring an old cached position — getting a fresh live fix…'
-      : `Waiting for GPS lock… (network fix only: ±${Math.round(accuracy)}m, need better)`);
+      : `Waiting for GPS lock… (±${Math.round(accuracy)}m so far, need ≤${MAX_ACCEPTABLE_ACCURACY_M}m)`);
     return; // don't draw/commit this one - wait for the next callback
   }
 
@@ -177,11 +175,8 @@ function onFix(pos, forceAccept) {
   window.dispatchEvent(new CustomEvent('pd:live-location', { detail: window.PD_LIVE_LOCATION }));
 
   drawFix(latitude, longitude, accuracy);
-  setOverlay(false); // fix accepted - drop the "getting location" cover
+  setOverlay(false); // fix accepted - guaranteed ≤40m, drop the "getting location" cover
   setAccuracyBadge(accuracy);
-  if (accuracy > MAX_ACCEPTABLE_ACCURACY_M) {
-    showToastIfAvailable(`Only got a rough network fix (±${Math.round(accuracy)}m) — move outdoors or check GPS is on for an exact position`);
-  }
   hasFirstFix = true;
 
   // Reverse-geocode a human-readable label, debounced so rapid GPS ticks
@@ -212,7 +207,6 @@ export function startWatching() {
   if (watchId !== null) return; // already watching
 
   hasFirstFix = false;
-  let bestSoFar = null; // fallback if every fix keeps getting rejected as stale/rough
   ensureMap();
   setOverlay(true, 'Getting your exact location…');
 
@@ -222,28 +216,16 @@ export function startWatching() {
   // watchPosition alone already delivers its first callback immediately
   // on virtually every browser, and is also what triggers the native
   // permission prompt the first time it's called.
-  watchId = navigator.geolocation.watchPosition(
-    (pos) => {
-      if (!bestSoFar || pos.coords.accuracy < bestSoFar.coords.accuracy) bestSoFar = pos;
-      onFix(pos, false);
-    },
-    onError,
-    { enableHighAccuracy: true, maximumAge: 0, timeout: FIRST_FIX_TIMEOUT_MS }
-  );
-
-  // Safety valve: only fires after genuinely waiting SAFETY_VALVE_MS
-  // (20s) for real GPS to lock. If every fix in that window was rejected
-  // as too rough (phone genuinely can't get better than network-level
-  // positioning - e.g. GPS hardware issue, deep indoors, airplane mode
-  // quirks), show the best one we've got with an honest low-accuracy
-  // label rather than spinning forever. This is deliberately generous -
-  // the earlier version fired at 8s, which is not enough time for real
-  // GPS to lock and was force-showing ±2000m network fixes as if they
-  // were the user's actual location.
-  setTimeout(() => {
-    if (hasFirstFix || !bestSoFar) return;
-    onFix(bestSoFar, true); // forceAccept: skip the staleness check only, still show honestly
-  }, SAFETY_VALVE_MS);
+  //
+  // No timeout-based fallback exists here on purpose: if GPS can't reach
+  // ≤40m accuracy, onFix() just keeps rejecting fixes and updating the
+  // "waiting for GPS lock" text forever, rather than ever settling for
+  // and displaying a rough/wrong position.
+  watchId = navigator.geolocation.watchPosition(onFix, onError, {
+    enableHighAccuracy: true,
+    maximumAge: 0,
+    timeout: FIRST_FIX_TIMEOUT_MS
+  });
 }
 
 export function stopWatching() {
