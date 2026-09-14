@@ -1,248 +1,879 @@
 /* =========================================================
-   LIVE LOCATION (location popup map)
-   -------------------------------------------------------------------------
-   Shows the customer's EXACT real-time position inside the "Update
-   delivery location" popup (#locBackdrop), Google Maps/Zomato-style:
+   LIVE DELIVERY LOCATION
+   ---------------------------------------------------------
+   High-accuracy browser location for delivery address picker.
 
-     - FAST FIRST FIX: shows the dot the moment ANY fix arrives (typically
-       1-5s), instead of waiting for a perfect GPS lock. A quick low-accuracy
-       fix is way better than a blank map for 15-20 seconds.
-     - Then keeps refining silently in the background via watchPosition -
-       the dot and accuracy ring update live as the fix improves, without
-       blocking or re-showing the "getting location" spinner.
-     - enableHighAccuracy:true still asks the device for real GPS chip
-       data (not just network approximation), it just doesn't WAIT for it
-       before showing something.
-     - Accuracy circle is drawn in real meters (Leaflet's L.circle takes
-       radius in meters directly), so it honestly shrinks as the fix
-       improves rather than being a fixed decorative size.
+   Flow:
+   1. Ask browser for high-accuracy location.
+   2. Start continuous watchPosition().
+   3. Accept fresh fixes.
+   4. Prefer better accuracy as GPS improves.
+   5. Show accuracy circle in real meters.
+   6. Keep latest/best location available globally.
+   7. Reverse-geocode the best location.
+   8. Stop GPS when popup closes.
 
-   Runs only while the location popup is open: starts on openLocModal(),
-   stops (clears the GPS watch) on close, so it isn't burning
-   battery/GPS in the background the rest of the time.
-
-   Exposes window.PD_LIVE_LOCATION = { lat, lng, accuracy, updatedAt } so
-   order placement (script.js) can use the freshest fix as a fallback
-   when a saved address has no coordinates yet.
+   IMPORTANT:
+   Browser GPS accuracy depends on the customer's device,
+   operating system, browser, GPS visibility and permissions.
+   The website cannot force a specific accuracy such as 5m.
 ========================================================= */
 
-const FIRST_FIX_TIMEOUT_MS = 25000; // real GPS can take 10-30s to lock, especially indoors - don't cut it off early
-const GOOD_ENOUGH_ACCURACY_M = 15; // once we're this good, stop bothering to re-zoom aggressively
-const MAX_ACCEPTABLE_ACCURACY_M = 40; // HARD FLOOR: 1-40m only. A network/cell-tower fix (hundreds/thousands of
-// meters, like the ±2000m reading that caused the last bug report) is NEVER accepted or shown as the user's
-// location - not on the first fix, not as a "best we could get" fallback, not ever. If real GPS can't get
-// under 40m, the popup keeps waiting and says so honestly instead of displaying a wrong-looking position.
+const LOCATION_OPTIONS = {
+  enableHighAccuracy: true,
+  maximumAge: 0,
+  timeout: 60000
+};
 
+// Accuracy we consider excellent.
+const EXCELLENT_ACCURACY = 20;
+
+// Accuracy at which we stop aggressively trying to improve.
+const GOOD_ACCURACY = 30;
+
+// Ignore extremely bad fixes.
+const MAX_USEFUL_ACCURACY = 150;
+
+// Don't use positions older than this.
+const MAX_POSITION_AGE = 15000;
+
+// GPS watch.
+let watchId = null;
+
+// Leaflet objects.
 let map = null;
 let dotMarker = null;
 let accuracyCircle = null;
-let watchId = null;
+
+// Best location received so far.
+let bestPosition = null;
+
+// Latest location received.
+let latestPosition = null;
+
 let addressDebounce = null;
-let hasFirstFix = false;
+let locationStartedAt = 0;
 
-function el(id) { return document.getElementById(id); }
 
-function accuracyBadgeClass(acc) {
-  if (acc <= 20) return 'good';
-  if (acc <= 75) return 'ok';
-  return 'poor';
+/* =========================================================
+   HELPERS
+========================================================= */
+
+function el(id) {
+  return document.getElementById(id);
 }
 
-// Lightweight reverse geocode (OpenStreetMap Nominatim - same free service
-// script.js already uses for the checkout address picker), scoped to this
-// module so it works standalone.
-async function reverseGeocode(lat, lng) {
-  try {
-    const res = await fetch(
-      `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`,
-      { headers: { Accept: 'application/json' } }
-    );
-    if (!res.ok) throw new Error('reverse geocode failed');
-    const data = await res.json();
-    const a = data.address || {};
-    const area = a.suburb || a.neighbourhood || a.quarter || a.city_district || a.county || '';
-    const city = a.city || a.town || a.municipality || a.state_district || '';
-    return [area, city].filter(Boolean).join(', ') || data.display_name || null;
-  } catch (e) {
-    return null;
+
+/* =========================================================
+   ACCURACY LABEL
+========================================================= */
+
+function getAccuracyLabel(accuracy) {
+
+  if (accuracy <= 10) {
+    return "Very accurate";
+  }
+
+  if (accuracy <= 20) {
+    return "Excellent accuracy";
+  }
+
+  if (accuracy <= 30) {
+    return "Good accuracy";
+  }
+
+  if (accuracy <= 50) {
+    return "Improving accuracy";
+  }
+
+  if (accuracy <= 100) {
+    return "Approximate location";
+  }
+
+  return "Low accuracy";
+}
+
+
+/* =========================================================
+   ACCURACY BADGE
+========================================================= */
+
+function setAccuracyBadge(accuracy) {
+
+  const accEl = el("liveLocAccuracy");
+
+  if (!accEl) return;
+
+  if (typeof accuracy !== "number") {
+    accEl.style.display = "none";
+    return;
+  }
+
+  accEl.style.display = "inline-block";
+
+  accEl.className = "live-loc-accuracy";
+
+  if (accuracy <= 20) {
+    accEl.classList.add("good");
+  } else if (accuracy <= 50) {
+    accEl.classList.add("ok");
+  } else {
+    accEl.classList.add("poor");
+  }
+
+  accEl.textContent = `±${Math.round(accuracy)}m`;
+}
+
+
+/* =========================================================
+   OVERLAY
+========================================================= */
+
+function setOverlay(show, text = "") {
+
+  const overlay = el("liveLocOverlay");
+  const overlayText = el("liveLocOverlayText");
+
+  if (!overlay) return;
+
+  overlay.classList.toggle("hidden", !show);
+
+  if (overlayText && text) {
+    overlayText.textContent = text;
   }
 }
 
+
+/* =========================================================
+   LEAFLET DOT
+========================================================= */
+
 function buildDotIcon() {
+
   return L.divIcon({
-    className: '',
-    html: `<div class="live-loc-dot-icon"><div class="pulse"></div><div class="core"></div></div>`,
+    className: "",
+    html: `
+      <div class="live-loc-dot-icon">
+        <div class="pulse"></div>
+        <div class="core"></div>
+      </div>
+    `,
     iconSize: [18, 18],
     iconAnchor: [9, 9]
   });
 }
 
+
+/* =========================================================
+   CREATE MAP
+========================================================= */
+
 function ensureMap() {
-  if (map) return map;
-  const mapEl = el('liveLocMap');
-  if (!mapEl || typeof L === 'undefined') return null;
+
+  if (map) {
+    return map;
+  }
+
+  const mapEl = el("liveLocMap");
+
+  if (!mapEl) {
+    console.error("liveLocMap element not found");
+    return null;
+  }
+
+  if (typeof L === "undefined") {
+    console.error("Leaflet is not loaded");
+    return null;
+  }
 
   map = L.map(mapEl, {
     zoomControl: false,
-    attributionControl: false,
+    attributionControl: true,
+
     dragging: true,
     scrollWheelZoom: false,
-    touchZoom: true,
     doubleClickZoom: false,
-    tap: false
-  }).setView([20.5937, 78.9629], 5);
+    touchZoom: true,
 
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+    zoomAnimation: true
+  });
+
+  map.setView([20.5937, 78.9629], 5);
+
+  L.tileLayer(
+    "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+    {
+      maxZoom: 19,
+      attribution: "&copy; OpenStreetMap contributors"
+    }
+  ).addTo(map);
+
   return map;
 }
 
-function drawFix(lat, lng, accuracy) {
+
+/* =========================================================
+   DRAW USER LOCATION
+========================================================= */
+
+function drawLocation(lat, lng, accuracy, firstFix = false) {
+
   const m = ensureMap();
+
   if (!m) return;
+
   const latlng = [lat, lng];
 
+  /* -----------------------------------------
+     ACCURACY CIRCLE
+  ----------------------------------------- */
+
   if (!accuracyCircle) {
+
     accuracyCircle = L.circle(latlng, {
-      radius: accuracy, color: '#4285F4', weight: 1, fillColor: '#4285F4', fillOpacity: 0.12
+      radius: accuracy,
+
+      color: "#4285F4",
+      weight: 2,
+
+      fillColor: "#4285F4",
+      fillOpacity: 0.12
     }).addTo(m);
+
   } else {
+
     accuracyCircle.setLatLng(latlng);
     accuracyCircle.setRadius(accuracy);
   }
 
+
+  /* -----------------------------------------
+     LOCATION DOT
+  ----------------------------------------- */
+
   if (!dotMarker) {
-    dotMarker = L.marker(latlng, { icon: buildDotIcon(), zIndexOffset: 1000 }).addTo(m);
+
+    dotMarker = L.marker(latlng, {
+      icon: buildDotIcon(),
+      zIndexOffset: 1000
+    }).addTo(m);
+
   } else {
+
     dotMarker.setLatLng(latlng);
   }
 
-  // Zoom straight to a usable street-level view on the very first fix
-  // (no slow city->street animation), then just re-center quietly as it
-  // improves.
-  const targetZoom = accuracy <= GOOD_ENOUGH_ACCURACY_M ? 18 : accuracy <= 100 ? 16 : 14;
-  if (!hasFirstFix) {
-    m.setView(latlng, targetZoom, { animate: false });
+
+  /* -----------------------------------------
+     ZOOM
+  ----------------------------------------- */
+
+  let zoom = 16;
+
+  if (accuracy <= 20) {
+    zoom = 18;
+  } else if (accuracy <= 50) {
+    zoom = 17;
+  } else if (accuracy <= 100) {
+    zoom = 16;
+  }
+
+  if (firstFix) {
+
+    m.setView(latlng, zoom, {
+      animate: false
+    });
+
   } else {
-    m.setView(latlng, Math.max(m.getZoom(), targetZoom), { animate: true });
+
+    // Keep the map centered on the user while tracking.
+    m.setView(latlng, Math.max(m.getZoom(), zoom), {
+      animate: true
+    });
   }
 
-  // Popup can be sized 0x0 if it just became visible - force Leaflet to
-  // recalc so tiles actually render instead of showing a gray box.
-  requestAnimationFrame(() => m.invalidateSize());
-}
 
-function setOverlay(show, text) {
-  const overlay = el('liveLocOverlay');
-  const overlayText = el('liveLocOverlayText');
-  if (!overlay) return;
-  overlay.classList.toggle('hidden', !show);
-  if (overlayText && text) overlayText.textContent = text;
-}
-
-function setAccuracyBadge(accuracy) {
-  const accEl = el('liveLocAccuracy');
-  if (!accEl) return;
-  if (typeof accuracy === 'number') {
-    accEl.style.display = 'inline-block';
-    accEl.className = `live-loc-accuracy ${accuracyBadgeClass(accuracy)}`;
-    accEl.textContent = `±${Math.round(accuracy)}m`;
-  } else {
-    accEl.style.display = 'none';
-  }
-}
-
-function onFix(pos) {
-  const { latitude, longitude, accuracy } = pos.coords;
-
-  const ageMs = Date.now() - pos.timestamp;
-  const isStale = ageMs > 10000;
-  // HARD FLOOR: never accept/show anything outside 1-40m. No exceptions,
-  // no timeout-based fallback to a rough fix - this is exactly what
-  // produced the ±2000m "Vanasthalipuram" bug before. If GPS can't get
-  // this good, the popup keeps waiting and says so, instead of showing a
-  // wrong-looking position.
-  const isTooRough = accuracy > MAX_ACCEPTABLE_ACCURACY_M;
-
-  if (isStale || isTooRough) {
-    setOverlay(true, isStale
-      ? 'Ignoring an old cached position — getting a fresh live fix…'
-      : `Waiting for GPS lock… (±${Math.round(accuracy)}m so far, need ≤${MAX_ACCEPTABLE_ACCURACY_M}m)`);
-    return; // don't draw/commit this one - wait for the next callback
-  }
-
-  window.PD_LOC_PERMISSION = 'granted';
-  window.PD_LIVE_LOCATION = { lat: latitude, lng: longitude, accuracy, updatedAt: Date.now() };
-  window.dispatchEvent(new CustomEvent('pd:live-location', { detail: window.PD_LIVE_LOCATION }));
-
-  drawFix(latitude, longitude, accuracy);
-  setOverlay(false); // fix accepted - guaranteed ≤40m, drop the "getting location" cover
-  setAccuracyBadge(accuracy);
-  hasFirstFix = true;
-
-  // Reverse-geocode a human-readable label, debounced so rapid GPS ticks
-  // don't spam Nominatim.
-  clearTimeout(addressDebounce);
-  addressDebounce = setTimeout(async () => {
-    const label = await reverseGeocode(latitude, longitude);
-    const labelEl = el('locCurrentLabel');
-    if (label && labelEl) labelEl.textContent = label;
-  }, 500);
-}
-
-function onError(err) {
-  if (err && err.code === 1) window.PD_LOC_PERMISSION = 'denied';
-  if (hasFirstFix) return; // already have a dot on screen - a later timeout/error shouldn't wipe it
-  let msg = 'Could not get your exact location';
-  if (err && err.code === 1) msg = 'Location permission denied — enable it in browser/site settings';
-  else if (err && err.code === 2) msg = 'Location unavailable — check GPS/network and try again';
-  else if (err && err.code === 3) msg = 'Taking longer than usual — still trying…';
-  setOverlay(true, msg);
-}
-
-export function startWatching() {
-  if (!navigator.geolocation) {
-    setOverlay(true, 'Geolocation is not supported on this device');
-    return;
-  }
-  if (watchId !== null) return; // already watching
-
-  hasFirstFix = false;
-  ensureMap();
-  setOverlay(true, 'Getting your exact location…');
-
-  // ONE geolocation engine only (watchPosition). Previously this fired
-  // BOTH getCurrentPosition and watchPosition at once "to be safe" -
-  // that's actually what caused two competing fixes to race each other.
-  // watchPosition alone already delivers its first callback immediately
-  // on virtually every browser, and is also what triggers the native
-  // permission prompt the first time it's called.
-  //
-  // No timeout-based fallback exists here on purpose: if GPS can't reach
-  // ≤40m accuracy, onFix() just keeps rejecting fixes and updating the
-  // "waiting for GPS lock" text forever, rather than ever settling for
-  // and displaying a rough/wrong position.
-  watchId = navigator.geolocation.watchPosition(onFix, onError, {
-    enableHighAccuracy: true,
-    maximumAge: 0,
-    timeout: FIRST_FIX_TIMEOUT_MS
+  requestAnimationFrame(() => {
+    m.invalidateSize();
   });
 }
 
-export function stopWatching() {
+
+/* =========================================================
+   DETERMINE WHETHER THIS IS A BETTER POSITION
+========================================================= */
+
+function isBetterPosition(position) {
+
+  if (!bestPosition) {
+    return true;
+  }
+
+  const newAccuracy = position.coords.accuracy;
+  const oldAccuracy = bestPosition.coords.accuracy;
+
+  /*
+   * A newer position that is significantly more accurate
+   * replaces the old position.
+   */
+
+  if (newAccuracy < oldAccuracy - 3) {
+    return true;
+  }
+
+  /*
+   * If accuracy is almost the same, prefer the newer fix.
+   */
+
+  if (
+    Math.abs(newAccuracy - oldAccuracy) <= 3 &&
+    position.timestamp > bestPosition.timestamp
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+
+/* =========================================================
+   PROCESS LOCATION
+========================================================= */
+
+function onLocation(position) {
+
+  const coords = position.coords;
+
+  const latitude = coords.latitude;
+  const longitude = coords.longitude;
+  const accuracy = coords.accuracy;
+
+  const age = Date.now() - position.timestamp;
+
+  console.log("GPS FIX:", {
+    latitude,
+    longitude,
+    accuracy,
+    age
+  });
+
+
+  /* -----------------------------------------
+     BASIC VALIDATION
+  ----------------------------------------- */
+
+  if (
+    !Number.isFinite(latitude) ||
+    !Number.isFinite(longitude) ||
+    !Number.isFinite(accuracy)
+  ) {
+    console.warn("Invalid GPS position");
+    return;
+  }
+
+
+  /*
+   * Ignore stale locations.
+   */
+
+  if (age > MAX_POSITION_AGE) {
+
+    console.log("Ignoring stale location:", age);
+
+    setOverlay(
+      true,
+      "Getting a fresh GPS location…"
+    );
+
+    return;
+  }
+
+
+  /*
+   * Ignore extremely inaccurate positions.
+   *
+   * IMPORTANT:
+   * We do NOT require <=40m anymore.
+   *
+   * GPS can start at 80m and improve to 10m.
+   */
+
+  if (accuracy > MAX_USEFUL_ACCURACY) {
+
+    console.log(
+      "Location too inaccurate:",
+      accuracy
+    );
+
+    setOverlay(
+      true,
+      `Improving GPS accuracy… ±${Math.round(accuracy)}m`
+    );
+
+    return;
+  }
+
+
+  /* -----------------------------------------
+     SAVE LATEST FIX
+  ----------------------------------------- */
+
+  latestPosition = position;
+
+
+  /* -----------------------------------------
+     CHECK BEST FIX
+  ----------------------------------------- */
+
+  const firstFix = bestPosition === null;
+
+  if (isBetterPosition(position)) {
+
+    bestPosition = position;
+
+    const locationData = {
+      lat: latitude,
+      lng: longitude,
+      accuracy: accuracy,
+      updatedAt: Date.now(),
+      timestamp: position.timestamp
+    };
+
+    /*
+     * Global location object.
+     */
+
+    window.PD_LIVE_LOCATION = locationData;
+
+    window.PD_LOC_PERMISSION = "granted";
+
+    /*
+     * Notify the rest of your website.
+     */
+
+    window.dispatchEvent(
+      new CustomEvent(
+        "pd:live-location",
+        {
+          detail: locationData
+        }
+      )
+    );
+
+
+    /* -----------------------------------------
+       DRAW
+    ----------------------------------------- */
+
+    drawLocation(
+      latitude,
+      longitude,
+      accuracy,
+      firstFix
+    );
+
+
+    /* -----------------------------------------
+       UI
+    ----------------------------------------- */
+
+    setAccuracyBadge(accuracy);
+
+    setOverlay(
+      false
+    );
+
+
+    /*
+     * Show accuracy information.
+     */
+
+    const label = el("locAccuracyText");
+
+    if (label) {
+
+      label.textContent =
+        `${getAccuracyLabel(accuracy)} · ±${Math.round(accuracy)}m`;
+    }
+
+
+    /* -----------------------------------------
+       REVERSE GEOCODE
+    ----------------------------------------- */
+
+    clearTimeout(addressDebounce);
+
+    addressDebounce = setTimeout(
+      () => {
+
+        reverseGeocode(
+          latitude,
+          longitude
+        );
+
+      },
+      700
+    );
+  }
+
+
+  /*
+   * Excellent accuracy achieved.
+   */
+
+  if (accuracy <= EXCELLENT_ACCURACY) {
+
+    setOverlay(false);
+
+    console.log(
+      "Excellent GPS accuracy:",
+      accuracy
+    );
+  }
+}
+
+
+/* =========================================================
+   REVERSE GEOCODING
+========================================================= */
+
+async function reverseGeocode(lat, lng) {
+
+  try {
+
+    const url =
+      "https://nominatim.openstreetmap.org/reverse" +
+      `?format=jsonv2` +
+      `&lat=${encodeURIComponent(lat)}` +
+      `&lon=${encodeURIComponent(lng)}` +
+      `&zoom=18` +
+      `&addressdetails=1`;
+
+    const response = await fetch(
+      url,
+      {
+        headers: {
+          "Accept": "application/json"
+        }
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(
+        "Reverse geocoding failed"
+      );
+    }
+
+    const data = await response.json();
+
+    const address = data.address || {};
+
+    const area =
+      address.suburb ||
+      address.neighbourhood ||
+      address.quarter ||
+      address.city_district ||
+      "";
+
+    const city =
+      address.city ||
+      address.town ||
+      address.municipality ||
+      address.state_district ||
+      "";
+
+    const state =
+      address.state ||
+      "";
+
+    const label =
+      [
+        area,
+        city,
+        state
+      ]
+      .filter(Boolean)
+      .join(", ");
+
+
+    const labelEl =
+      el("locCurrentLabel");
+
+    if (labelEl) {
+
+      labelEl.textContent =
+        label ||
+        data.display_name ||
+        "Current location";
+    }
+
+
+    /*
+     * Keep full address information available
+     * for checkout/order placement.
+     */
+
+    window.PD_LIVE_ADDRESS = {
+      displayName:
+        data.display_name || label || "",
+
+      area,
+      city,
+      state,
+
+      latitude: lat,
+      longitude: lng
+    };
+
+
+    window.dispatchEvent(
+      new CustomEvent(
+        "pd:live-address",
+        {
+          detail:
+            window.PD_LIVE_ADDRESS
+        }
+      )
+    );
+
+
+    return data;
+
+  } catch (error) {
+
+    console.warn(
+      "Reverse geocoding failed:",
+      error
+    );
+
+    return null;
+  }
+}
+
+
+/* =========================================================
+   LOCATION ERROR
+========================================================= */
+
+function onLocationError(error) {
+
+  console.error(
+    "Geolocation error:",
+    error
+  );
+
+
+  /*
+   * Permission denied.
+   */
+
+  if (error.code === 1) {
+
+    window.PD_LOC_PERMISSION = "denied";
+
+    setOverlay(
+      true,
+      "Location permission denied. Please allow location access in your browser settings."
+    );
+
+    return;
+  }
+
+
+  /*
+   * Position unavailable.
+   */
+
+  if (error.code === 2) {
+
+    setOverlay(
+      true,
+      "GPS location unavailable. Please turn on Location Services and try again."
+    );
+
+    return;
+  }
+
+
+  /*
+   * Timeout.
+   *
+   * Don't treat this as permanent failure.
+   * The watch can continue receiving future fixes.
+   */
+
+  if (error.code === 3) {
+
+    setOverlay(
+      true,
+      "GPS is taking longer than usual. Searching for a better location…"
+    );
+
+    return;
+  }
+
+
+  setOverlay(
+    true,
+    "Unable to get your current location."
+  );
+}
+
+
+/* =========================================================
+   START WATCHING
+========================================================= */
+
+export function startWatching() {
+
+  if (!navigator.geolocation) {
+
+    setOverlay(
+      true,
+      "Your browser does not support location services."
+    );
+
+    return;
+  }
+
+
+  /*
+   * Don't start twice.
+   */
+
   if (watchId !== null) {
-    navigator.geolocation.clearWatch(watchId);
+
+    console.log(
+      "Location watch already running"
+    );
+
+    return;
+  }
+
+
+  /*
+   * Reset session state.
+   */
+
+  bestPosition = null;
+  latestPosition = null;
+
+  locationStartedAt = Date.now();
+
+  window.PD_LIVE_LOCATION = null;
+
+
+  setOverlay(
+    true,
+    "Getting your precise location…"
+  );
+
+
+  /*
+   * Make sure map exists.
+   */
+
+  ensureMap();
+
+
+  /*
+   * IMPORTANT:
+   *
+   * watchPosition is used as the single GPS engine.
+   *
+   * enableHighAccuracy requests GPS-level accuracy.
+   */
+
+  watchId =
+    navigator.geolocation.watchPosition(
+      onLocation,
+      onLocationError,
+      LOCATION_OPTIONS
+    );
+
+
+  console.log(
+    "High-accuracy location tracking started"
+  );
+}
+
+
+/* =========================================================
+   STOP WATCHING
+========================================================= */
+
+export function stopWatching() {
+
+  if (watchId !== null) {
+
+    navigator.geolocation.clearWatch(
+      watchId
+    );
+
     watchId = null;
   }
-  clearTimeout(addressDebounce);
+
+
+  clearTimeout(
+    addressDebounce
+  );
+
+
+  console.log(
+    "Location tracking stopped"
+  );
 }
 
-// Called once from app-init.js. Doesn't start GPS itself - script.js's
-// openLocModal()/closeLocModal() call startWatching()/stopWatching() so
-// tracking only runs while the popup is actually open.
-export function initLiveLocation() {
-  window.PD_LIVE_LOC = { start: startWatching, stop: stopWatching };
-}
+
+/* =========================================================
+   GET CURRENT BEST LOCATION
+========================================================= */
 
 export function getLiveLocation() {
-  return window.PD_LIVE_LOCATION || null;
+
+  return (
+    window.PD_LIVE_LOCATION ||
+    null
+  );
+}
+
+
+/* =========================================================
+   INITIALIZE GLOBAL API
+========================================================= */
+
+export function initLiveLocation() {
+
+  window.PD_LIVE_LOC = {
+
+    start: startWatching,
+
+    stop: stopWatching,
+
+    get: getLiveLocation
+  };
+}
+
+
+/* =========================================================
+   OPTIONAL:
+   MANUALLY REQUEST A FRESH LOCATION
+========================================================= */
+
+export function requestFreshLocation() {
+
+  if (!navigator.geolocation) {
+    return;
+  }
+
+
+  navigator.geolocation.getCurrentPosition(
+    onLocation,
+    onLocationError,
+    {
+      enableHighAccuracy: true,
+      maximumAge: 0,
+      timeout: 60000
+    }
+  );
 }
