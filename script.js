@@ -1061,9 +1061,12 @@
       }
       window.addEventListener('pd:live-location', onLiveFix);
 
-      // Timeout/no-permission fallback: if no fix arrives at all within a
-      // reasonable window, stop waiting instead of leaving the button
-      // stuck on "Requesting..." forever.
+      // Timeout/no-permission fallback: real GPS can genuinely take up to
+      // ~25-30s to lock on (js/live-location.js never settles for
+      // anything worse than 40m accuracy, so it keeps retrying rather
+      // than giving up early) - give it real time before telling the
+      // user it failed, instead of falsely saying "could not fetch" while
+      // the popup's map is still honestly working on it.
       setTimeout(()=>{
         if(!useLocBtn.classList.contains('loading')) return; // already resolved
         window.removeEventListener('pd:live-location', onLiveFix);
@@ -1073,9 +1076,9 @@
         if(window.PD_LOC_PERMISSION === 'denied'){
           showToast('Location permission denied — turn it on in your browser/phone settings to use exact location');
         } else {
-          showToast('Could not fetch live location — check GPS/network and try again');
+          showToast('Could not get a precise (\u226440m) GPS fix — move outdoors or check GPS is on, then try again');
         }
-      }, 12000);
+      }, 35000);
 
       if(window.PD_LIVE_LOC) window.PD_LIVE_LOC.start();
     });
