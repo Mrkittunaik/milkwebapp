@@ -700,20 +700,42 @@
   }
 
   /* =========================================================
-     PAYMENT GATEWAY: Razorpay integration point.
-     Swap RAZORPAY_KEY_ID with the real key from your backend/.env
-     once the /api/payments/create-order endpoint exists. Until then
-     this runs a realistic simulated flow so the UI/UX is fully wired.
+     PAYMENT GATEWAY: real Razorpay integration.
+     -------------------------------------------------------------------------
+     Flow:
+       1. POST /api/payments/create-order { items, couponCode } -> backend
+          re-prices the cart itself (never trusts a client amount) and
+          returns a real Razorpay order id (or a dev-mode fake one if the
+          backend has no RAZORPAY_KEY_ID/SECRET configured yet).
+       2. Open Razorpay's checkout with that order id.
+       3. On success, POST /api/payments/verify with the signature Razorpay
+          returns, so the backend can confirm the payment is genuine
+          (HMAC-checked) before we ever call it "paid".
+       4. Only then call placeOrder(), passing paymentOrderId/paymentRef
+          through so the Order document links back to the payment.
+     In dev mode (no real backend keys yet) step 2 is skipped since there's
+     no real order to check out - placeOrder() runs directly with a
+     DEV_PAY_ marker so the whole flow can be tested end-to-end.
   ========================================================= */
-  const RAZORPAY_KEY_ID = 'rzp_test_REPLACE_WITH_REAL_KEY';
-
-  function getOrderTotalPaise(){
-    const totalText = (document.getElementById('payTotal') || {}).textContent || '₹0';
-    const rupees = parseInt(totalText.replace(/[^\d]/g,''), 10) || 0;
-    return rupees * 100;
+  let razorpayScriptPromise = null;
+  function loadRazorpayScript(){
+    if (window.Razorpay) return Promise.resolve();
+    if (razorpayScriptPromise) return razorpayScriptPromise;
+    razorpayScriptPromise = new Promise((resolve, reject)=>{
+      const s = document.createElement('script');
+      s.src = 'https://checkout.razorpay.com/v1/checkout.js';
+      s.onload = () => resolve();
+      s.onerror = () => reject(new Error('Could not load the payment gateway - check your internet connection'));
+      document.head.appendChild(s);
+    });
+    return razorpayScriptPromise;
   }
 
-  function launchPaymentGateway(method){
+  function cartToItemsPayload(){
+    return Object.values(cart).map(item => ({ productId: item.id, qty: item.qty }));
+  }
+
+  async function launchPaymentGateway(method){
     payNowBtn.textContent = 'Processing...';
     payNowBtn.disabled = true;
 
@@ -722,44 +744,77 @@
     // PAYMENT RESUME + HISTORY module near the end of this file.
     const pending = startPendingPayment(method);
 
-    // Real integration (once backend order-create endpoint exists):
-    //   1. POST /api/payments/create-order { amount, currency:'INR' } -> { orderId }
-    //   2. Open Razorpay checkout with that orderId
-    //   3. On success, POST /api/payments/verify with the signature
-    //   4. Then call placeOrder(method, paymentRef)
-    if(window.Razorpay && RAZORPAY_KEY_ID.indexOf('REPLACE') === -1){
-      const rzp = new window.Razorpay({
-        key: RAZORPAY_KEY_ID,
-        amount: getOrderTotalPaise(),
-        currency: 'INR',
-        name: 'Pakka Doodhwala',
-        description: 'Order payment',
-        theme: { color: '#FDC202' },
-        handler: function(response){
-          placeOrder(method, response.razorpay_payment_id, pending);
-        },
-        modal: {
-          ondismiss: function(){
-            payNowBtn.textContent = 'Pay & Place Order';
-            payNowBtn.disabled = false;
-            showToast('Payment cancelled');
-            // User dismissed the gateway before completing -> failed attempt,
-            // eligible for the 2-minute resume banner.
-            failPendingPayment(pending, 'cancelled');
-          }
-        }
-      });
-      rzp.open();
+    function cancelled(msg){
+      payNowBtn.textContent = 'Pay & Place Order';
+      payNowBtn.disabled = false;
+      showToast(msg);
+      failPendingPayment(pending, 'cancelled');
+    }
+
+    let created;
+    try{
+      created = await window.PD_PAYMENTS.createOrder(cartToItemsPayload(), null);
+    } catch(err){
+      cancelled(err.message || 'Could not start payment - please try again');
       return;
     }
 
-    // Simulated gateway flow (used until Razorpay script + real key are wired in)
-    setTimeout(()=>{
-      placeOrder(method, 'SIMULATED_PAY_' + Date.now(), pending);
-    }, 1100);
+    // Dev mode: backend has no real Razorpay keys yet, so there's no real
+    // gateway order to check out against. Place the order directly with a
+    // clearly-marked dev payment ref, so the full UI flow (cart -> pay ->
+    // success -> tracking) can be built/tested before real keys exist.
+    if (created.dev){
+      placeOrder(method, 'DEV_PAY_' + Date.now(), pending, created.orderId);
+      return;
+    }
+
+    try{
+      await loadRazorpayScript();
+    } catch(err){
+      cancelled(err.message);
+      return;
+    }
+
+    const rzp = new window.Razorpay({
+      key: created.keyId,
+      order_id: created.orderId,
+      amount: created.amount,
+      currency: created.currency,
+      name: 'Pakka Doodhwala',
+      description: 'Order payment',
+      theme: { color: '#FDC202' },
+      handler: async function(response){
+        // response = { razorpay_order_id, razorpay_payment_id, razorpay_signature }
+        try{
+          const result = await window.PD_PAYMENTS.verify(
+            response.razorpay_order_id,
+            response.razorpay_payment_id,
+            response.razorpay_signature
+          );
+          if (!result || !result.ok){
+            cancelled('Payment could not be verified - if money was deducted, it will be auto-refunded. Please try again.');
+            return;
+          }
+          placeOrder(method, response.razorpay_payment_id, pending, response.razorpay_order_id);
+        } catch(err){
+          cancelled(err.message || 'Payment verification failed - please try again');
+        }
+      },
+      modal: {
+        ondismiss: function(){
+          // User dismissed the gateway before completing -> failed attempt,
+          // eligible for the 2-minute resume banner.
+          cancelled('Payment cancelled');
+        }
+      }
+    });
+    rzp.on('payment.failed', function(){
+      cancelled('Payment failed - please try a different method or try again');
+    });
+    rzp.open();
   }
 
-  async function placeOrder(method, paymentRef, pending){
+  async function placeOrder(method, paymentRef, pending, paymentOrderId){
     payNowBtn.textContent = 'Pay & Place Order';
     payNowBtn.disabled = false;
 
@@ -786,7 +841,8 @@
         lng: orderLng,
         locationAccuracy: orderLocationAccuracy,
         paymentStatus: method === 'cod' ? 'cod' : 'paid',
-        paymentRef: paymentRef || null
+        paymentRef: paymentRef || null,
+        paymentOrderId: paymentOrderId || null
       });
       window.__lastOrder = order; // real Order document from the backend
 
