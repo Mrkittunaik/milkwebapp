@@ -11,7 +11,7 @@
    on http://localhost:5000 (see index.html patch notes).
 ========================================================= */
 
-import { isLoggedIn, getTokenUserId, usersApi } from './api.js';
+import { isLoggedIn, getTokenUserId, usersApi, paymentsApi } from './api.js';
 import { connectSocket } from './socket.js';
 import { initProducts, getProductById, searchProducts, setSearchTerm, highlightInHomeRail } from './products.js';
 import { initPlans, getPlanById } from './plan.js';
@@ -86,6 +86,14 @@ window.PD_REAL_ORDERS = {
   stopTrackingOrder,
   onMyOrdersChanged,
   fetchMyOrders
+};
+
+// ---- Payments: real Razorpay create-order/verify calls. script.js's
+// launchPaymentGateway() calls these instead of talking to fetch()/api.js
+// directly, same bridging pattern as PD_REAL_ORDERS above. ----
+window.PD_PAYMENTS = {
+  createOrder: paymentsApi.createOrder,
+  verify: paymentsApi.verify
 };
 
 // ---- Connect the realtime channel for EVERYONE, guest or logged in, so
