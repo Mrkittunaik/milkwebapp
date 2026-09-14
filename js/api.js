@@ -168,8 +168,11 @@ export const couponsApi = {
 
 /* ---------------- Payments ---------------- */
 export const paymentsApi = {
-  createOrder: (amount, currency = 'INR') => api.post('/api/payments/create-order', { amount, currency }),
-  verify: (orderId, paymentId, signature) => api.post('/api/payments/verify', { orderId, paymentId, signature })
+  // Server re-prices the cart itself from items/couponCode - it never
+  // trusts a client-sent amount, so don't pass one.
+  createOrder: (items, couponCode) => api.post('/api/payments/create-order', { items, couponCode }),
+  verify: (razorpay_order_id, razorpay_payment_id, razorpay_signature) =>
+    api.post('/api/payments/verify', { razorpay_order_id, razorpay_payment_id, razorpay_signature })
 };
 
 /* ---------------- Delivery boy (self) ---------------- */
