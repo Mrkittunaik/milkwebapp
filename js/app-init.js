@@ -129,8 +129,12 @@ window.PD_PAYMENTS = {
   // for guests - only for logged-in users, and only if not already answered).
   requestPushPermission();
 
-  // Keep "My Orders" screen fresh without the user pulling to refresh.
-  onMyOrdersChanged(() => {
-    if (typeof window.renderOrderHistory === 'function') window.renderOrderHistory();
+  // Keep "My Orders" screen fresh without the user pulling to refresh, and
+  // without waiting on a fresh network fetch - apply the pushed order
+  // straight into the in-memory list so the status/rider change reflects
+  // instantly (no reload, no refetch round-trip).
+  onMyOrdersChanged((order) => {
+    if (typeof window.applyLiveOrderUpdate === 'function') window.applyLiveOrderUpdate(order);
+    else if (typeof window.renderOrderHistory === 'function') window.renderOrderHistory();
   });
 })();
