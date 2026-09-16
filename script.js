@@ -2972,7 +2972,7 @@
 
   const ACTIVE_STATUSES = ['placed', 'preparing', 'pending_acceptance', 'out'];
 
-  async function renderOrderHistory(){
+  async function renderOrderHistory(liveOrder){
     const list = document.getElementById('ordersList');
     if(!list) return;
 
@@ -2986,11 +2986,21 @@
       return;
     }
 
-    try{
-      myOrders = await window.PD_REAL_ORDERS.fetchMyOrders();
-    }catch(e){
-      list.innerHTML = '<div class="order-empty">Couldn\u2019t load your orders \u2014 pull to refresh.</div>';
-      return;
+    if(liveOrder){
+      // Instant path: a status/assign event already handed us the fresh
+      // order doc - patch it straight into the in-memory list instead of
+      // doing a full GET /api/orders round-trip, so the UI updates the
+      // moment the event arrives instead of waiting on a refetch.
+      const idx = myOrders.findIndex(o => String(o._id) === String(liveOrder._id));
+      if(idx > -1) myOrders[idx] = Object.assign({}, myOrders[idx], liveOrder);
+      else myOrders.unshift(liveOrder);
+    } else {
+      try{
+        myOrders = await window.PD_REAL_ORDERS.fetchMyOrders();
+      }catch(e){
+        list.innerHTML = '<div class="order-empty">Couldn\u2019t load your orders \u2014 pull to refresh.</div>';
+        return;
+      }
     }
 
     if(!myOrders.length){
@@ -3175,6 +3185,7 @@
   }
   renderOrderHistory();
   window.renderOrderHistory = renderOrderHistory; // re-run when the Orders tab is (re)opened, so mini-maps init correctly
+  window.applyLiveOrderUpdate = (order) => renderOrderHistory(order); // instant in-place update from a socket event, no refetch
 
   /* ---------- Bill / invoice modal ---------- */
   function openBill(order){
