@@ -3048,9 +3048,11 @@
             </div>
           </div>`);
       } else if(isActive){
-        // Placed/preparing/pending_acceptance but no driver assigned yet -
+        // Placed/preparing/pending_acceptance/out but no driver assigned yet -
         // real state, just nothing to show on a map until someone accepts.
-        const statusLabel = o.status === 'pending_acceptance' ? 'Finding a delivery partner' : 'Preparing';
+        const statusLabel = o.status === 'pending_acceptance' ? 'Finding a delivery partner'
+          : o.status === 'out' ? 'Out for Delivery'
+          : 'Preparing';
         html.push(`
           <div class="order-card">
             <div class="order-top"><div>
