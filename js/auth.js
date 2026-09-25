@@ -93,9 +93,11 @@ export async function fetchMyProfile() {
 //   3. Google's auto-select flag, so the account picker is shown again
 //      next time instead of Google silently re-picking the same account
 export function logout() {
-  setToken(null);
-  disconnectSocket();
-  if (window.google && window.google.accounts && window.google.accounts.id) {
-    window.google.accounts.id.disableAutoSelect();
-  }
+  try{ setToken(null); } catch(e){ console.warn('[auth] logout: clearing token failed', e); }
+  try{ disconnectSocket(); } catch(e){ console.warn('[auth] logout: disconnecting socket failed', e); }
+  try{
+    if (window.google && window.google.accounts && window.google.accounts.id) {
+      window.google.accounts.id.disableAutoSelect();
+    }
+  } catch(e){ console.warn('[auth] logout: Google disableAutoSelect failed', e); }
 }
