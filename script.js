@@ -45,6 +45,13 @@
     userSession.phone = null;
     userSession.blocked = false;
     try{ localStorage.removeItem(SESSION_STORAGE_KEY); } catch(e){}
+    // Also clear the real JWT + live socket + Google's auto-select session -
+    // without this, logging out only cleared the local display state while
+    // the backend still saw an active session and Google silently signed
+    // the same account back in, making logout look broken.
+    if(window.PD_REAL_AUTH && typeof window.PD_REAL_AUTH.logout === 'function'){
+      window.PD_REAL_AUTH.logout();
+    }
   }
 
   // Checks the admin panel's blocked flag via GET /api/users/:id/status.
