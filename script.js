@@ -1892,6 +1892,12 @@
   if(loginGateBack) loginGateBack.addEventListener('click', closeLoginGate);
 
   // ---- Google path ----
+  // Hidden container Google's real sign-in button gets rendered into once -
+  // see js/auth.js for why we click this instead of relying on prompt().
+  const googleBtnContainer = document.createElement('div');
+  googleBtnContainer.style.cssText = 'position:absolute; width:1px; height:1px; overflow:hidden; opacity:0; pointer-events:none;';
+  document.body.appendChild(googleBtnContainer);
+
   const googleSignInBtn = document.getElementById('googleSignInBtn');
   if(googleSignInBtn) googleSignInBtn.addEventListener('click', async ()=>{
     googleSignInBtn.disabled = true;
@@ -1925,7 +1931,7 @@
         // user can immediately click "Continue with Google" again.
         googleSignInBtn.disabled = false;
         googleSignInBtn.textContent = 'Continue with Google';
-      });
+      }, googleBtnContainer);
       if(!started){
         showToast('Google sign-in not configured yet');
         googleSignInBtn.disabled = false;
