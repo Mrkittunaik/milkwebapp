@@ -1853,6 +1853,7 @@
   function closeLoginGate(){
     document.getElementById('loginGate').classList.remove('show');
     pendingAuthAction = null;
+    stopOtpTimer();
   }
   function completeLogin(){
     document.getElementById('loginGate').classList.remove('show');
@@ -1897,7 +1898,10 @@
     googleSignInBtn.textContent = 'Signing in...';
     try{
       // Real Google Identity Services popup is wired in js/auth.js's
-      // startGoogleSignIn(); it calls this callback with the raw credential.
+      // startGoogleSignIn(); it calls onCredential with the raw credential
+      // when an account is picked, or onClosed when the picker is closed
+      // without a pick (X button, Escape, outside click, auto-skip, etc)
+      // so the button doesn't stay stuck on "Signing in..." forever.
       const started = window.PD_REAL_AUTH.startGoogleSignIn(async (credential)=>{
         const res = await window.PD_REAL_AUTH.completeGoogleLogin(credential);
         userSession.googleId = res.user.googleId;
@@ -1914,6 +1918,11 @@
           document.getElementById('loginStepChoice').classList.remove('active');
           document.getElementById('loginStepBindPhone').classList.add('active');
         }
+        googleSignInBtn.disabled = false;
+        googleSignInBtn.textContent = 'Continue with Google';
+      }, ()=>{
+        // Picker closed with no account chosen - reset the button so the
+        // user can immediately click "Continue with Google" again.
         googleSignInBtn.disabled = false;
         googleSignInBtn.textContent = 'Continue with Google';
       });
@@ -1963,6 +1972,59 @@
 
   let otpPendingPhone = null;
 
+  // OTP expiry: 2 minutes from when it was sent. Stored as a wall-clock
+  // deadline (Date.now() + OTP_VALID_MS), not a running counter, so it's
+  // still correct after the tab was backgrounded/minimised on mobile and
+  // the interval callback got throttled or paused while away.
+  const OTP_VALID_MS = 2 * 60 * 1000;
+  let otpExpiresAt = null;
+  let otpTimerId = null;
+
+  function stopOtpTimer(){
+    if(otpTimerId){ clearInterval(otpTimerId); otpTimerId = null; }
+    otpExpiresAt = null;
+    const sub = document.getElementById('otpTimerSub');
+    if(sub) sub.textContent = '';
+  }
+
+  function otpExpired(){
+    if(otpVerifyBtn){ otpVerifyBtn.disabled = true; }
+    const sub = document.getElementById('otpTimerSub');
+    if(sub) sub.textContent = 'OTP expired, tap Resend OTP to get a new code.';
+    showToast('OTP expired, please resend');
+    if(otpTimerId){ clearInterval(otpTimerId); otpTimerId = null; }
+  }
+
+  function startOtpTimer(){
+    stopOtpTimer();
+    otpExpiresAt = Date.now() + OTP_VALID_MS;
+    if(otpVerifyBtn) otpVerifyBtn.disabled = false;
+    const tick = ()=>{
+      const msLeft = otpExpiresAt - Date.now();
+      const sub = document.getElementById('otpTimerSub');
+      if(msLeft <= 0){
+        otpExpired();
+        return;
+      }
+      if(sub){
+        const secs = Math.ceil(msLeft / 1000);
+        sub.textContent = `Code expires in ${Math.floor(secs/60)}:${String(secs%60).padStart(2,'0')}`;
+      }
+    };
+    tick();
+    otpTimerId = setInterval(tick, 1000);
+  }
+
+  // Re-check the deadline whenever the page becomes visible again, so a
+  // user who backgrounded the app/browser past the 2-minute mark comes
+  // back to an already-expired OTP screen instead of a stale countdown
+  // (setInterval can be throttled/frozen while the tab is hidden).
+  document.addEventListener('visibilitychange', ()=>{
+    if(document.visibilityState === 'visible' && otpExpiresAt){
+      if(Date.now() >= otpExpiresAt) otpExpired();
+    }
+  });
+
   const phoneLoginSendOtpBtn = document.getElementById('phoneLoginSendOtpBtn');
   if(phoneLoginSendOtpBtn) phoneLoginSendOtpBtn.addEventListener('click', async ()=>{
     const phone = document.getElementById('phoneLoginInput').value.trim();
@@ -1991,6 +2053,7 @@
       document.querySelectorAll('.otp-box').forEach(b=> b.value = '');
       const firstBox = document.querySelector('.otp-box');
       if(firstBox) firstBox.focus();
+      startOtpTimer();
       // devHint is only present when the backend's OTP_DEV_MODE=true env var is set -
       // shows the code in the toast so you can test without a real SMS provider.
       showToast(res.devHint ? `OTP sent (dev code: ${res.devHint})` : 'OTP sent');
@@ -2017,6 +2080,8 @@
     if(!otpPendingPhone) return;
     try{
       const res = await window.PD_REAL_AUTH.sendOtp(otpPendingPhone);
+      document.querySelectorAll('.otp-box').forEach(b=> b.value = '');
+      startOtpTimer();
       showToast(res.devHint ? `OTP resent (dev code: ${res.devHint})` : 'OTP resent');
     } catch(err){
       showToast(err.message || 'Could not resend OTP');
@@ -2025,6 +2090,10 @@
 
   const otpVerifyBtn = document.getElementById('otpVerifyBtn');
   if(otpVerifyBtn) otpVerifyBtn.addEventListener('click', async ()=>{
+    if(otpExpiresAt && Date.now() >= otpExpiresAt){
+      otpExpired();
+      return;
+    }
     const code = Array.from(document.querySelectorAll('.otp-box')).map(b=>b.value).join('');
     if(code.length !== 4){
       showToast('Enter the full 4-digit OTP');
@@ -2033,6 +2102,7 @@
 
     try{
       const user = await window.PD_REAL_AUTH.verifyOtp(otpPendingPhone, code);
+      stopOtpTimer();
       userSession.phone = user.phone;
       userSession.name = user.name || userSession.name;
       userSession.loggedIn = true;
