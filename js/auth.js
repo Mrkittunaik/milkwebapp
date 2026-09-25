@@ -8,7 +8,7 @@
 ========================================================= */
 
 import { authApi, setToken, usersApi } from './api.js';
-import { connectSocket } from './socket.js';
+import { connectSocket, disconnectSocket } from './socket.js';
 
 
 
@@ -80,4 +80,22 @@ export async function bindPhone(phone) {
 
 export async function fetchMyProfile() {
   return usersApi.me();
+}
+
+// Full logout: clears our own JWT (script.js's clearSession() only wiped
+// its local userSession object + localStorage cache, never this token -
+// so the backend still treated the old session as logged in, and on top
+// of that Google's own "remember this account" auto-select would silently
+// hand back the same account next time, making it look like logout never
+// worked at all). This clears all three:
+//   1. our JWT, so the backend session is actually gone
+//   2. the live socket connection, so no more live events for this user
+//   3. Google's auto-select flag, so the account picker is shown again
+//      next time instead of Google silently re-picking the same account
+export function logout() {
+  setToken(null);
+  disconnectSocket();
+  if (window.google && window.google.accounts && window.google.accounts.id) {
+    window.google.accounts.id.disableAutoSelect();
+  }
 }
