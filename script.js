@@ -48,9 +48,15 @@
     // Also clear the real JWT + live socket + Google's auto-select session -
     // without this, logging out only cleared the local display state while
     // the backend still saw an active session and Google silently signed
-    // the same account back in, making logout look broken.
-    if(window.PD_REAL_AUTH && typeof window.PD_REAL_AUTH.logout === 'function'){
-      window.PD_REAL_AUTH.logout();
+    // the same account back in, making logout look broken. Wrapped in
+    // try/catch: if any of this throws, the Log Out button must still
+    // finish updating the UI below rather than silently getting stuck.
+    try{
+      if(window.PD_REAL_AUTH && typeof window.PD_REAL_AUTH.logout === 'function'){
+        window.PD_REAL_AUTH.logout();
+      }
+    } catch(e){
+      console.warn('Non-fatal error during logout cleanup:', e);
     }
   }
 
@@ -1906,10 +1912,18 @@
   // on mobile before. We just wire what happens once a credential comes
   // back from that real button.
   //
-  // gsi/client is loaded async defer, so window.google may not exist the
-  // instant this file runs - retry briefly until it's ready instead of
-  // giving up on the first attempt.
+  // gsi/client is async defer AND window.PD_REAL_AUTH is set by app-init.js,
+  // a type="module" script - modules always execute after ordinary scripts
+  // like this one, so window.PD_REAL_AUTH does not exist yet the instant
+  // this file runs. Calling straight into it here would throw and (since
+  // this is one long IIFE) abort every listener below it in the file,
+  // including Log Out - so retry until BOTH window.google and
+  // window.PD_REAL_AUTH actually exist instead of assuming either is ready.
   (function initGoogleButtonWhenReady(attemptsLeft){
+    if(!window.PD_REAL_AUTH || typeof window.PD_REAL_AUTH.initGoogleSignIn !== 'function'){
+      if(attemptsLeft > 0) setTimeout(()=> initGoogleButtonWhenReady(attemptsLeft - 1), 300);
+      return;
+    }
     const ok = window.PD_REAL_AUTH.initGoogleSignIn(async (credential)=>{
       try{
         const res = await window.PD_REAL_AUTH.completeGoogleLogin(credential);
