@@ -1892,23 +1892,19 @@
   if(loginGateBack) loginGateBack.addEventListener('click', closeLoginGate);
 
   // ---- Google path ----
-  // Hidden container Google's real sign-in button gets rendered into once -
-  // see js/auth.js for why we click this instead of relying on prompt().
-  const googleBtnContainer = document.createElement('div');
-  googleBtnContainer.style.cssText = 'position:absolute; width:1px; height:1px; overflow:hidden; opacity:0; pointer-events:none;';
-  document.body.appendChild(googleBtnContainer);
-
-  const googleSignInBtn = document.getElementById('googleSignInBtn');
-  if(googleSignInBtn) googleSignInBtn.addEventListener('click', async ()=>{
-    googleSignInBtn.disabled = true;
-    googleSignInBtn.textContent = 'Signing in...';
-    try{
-      // Real Google Identity Services popup is wired in js/auth.js's
-      // startGoogleSignIn(); it calls onCredential with the raw credential
-      // when an account is picked, or onClosed when the picker is closed
-      // without a pick (X button, Escape, outside click, auto-skip, etc)
-      // so the button doesn't stay stuck on "Signing in..." forever.
-      const started = window.PD_REAL_AUTH.startGoogleSignIn(async (credential)=>{
+  // Google's real sign-in button is rendered directly into the page (see
+  // #googleSignInRealBtn in index.html) and the user taps IT, not our old
+  // custom button - Google does not allow triggering its popup/redirect
+  // via a synthetic click from our own JS, which is what silently failed
+  // on mobile before. We just wire what happens once a credential comes
+  // back from that real button.
+  //
+  // gsi/client is loaded async defer, so window.google may not exist the
+  // instant this file runs - retry briefly until it's ready instead of
+  // giving up on the first attempt.
+  (function initGoogleButtonWhenReady(attemptsLeft){
+    const ok = window.PD_REAL_AUTH.initGoogleSignIn(async (credential)=>{
+      try{
         const res = await window.PD_REAL_AUTH.completeGoogleLogin(credential);
         userSession.googleId = res.user.googleId;
         userSession.email = res.user.email;
@@ -1924,25 +1920,14 @@
           document.getElementById('loginStepChoice').classList.remove('active');
           document.getElementById('loginStepBindPhone').classList.add('active');
         }
-        googleSignInBtn.disabled = false;
-        googleSignInBtn.textContent = 'Continue with Google';
-      }, ()=>{
-        // Picker closed with no account chosen - reset the button so the
-        // user can immediately click "Continue with Google" again.
-        googleSignInBtn.disabled = false;
-        googleSignInBtn.textContent = 'Continue with Google';
-      }, googleBtnContainer);
-      if(!started){
-        showToast('Google sign-in not configured yet');
-        googleSignInBtn.disabled = false;
-        googleSignInBtn.textContent = 'Continue with Google';
+      } catch(err){
+        showToast('Google sign-in failed, please try again');
       }
-    } catch(err){
-      showToast('Google sign-in failed, please try again');
-      googleSignInBtn.disabled = false;
-      googleSignInBtn.textContent = 'Continue with Google';
+    });
+    if(!ok && attemptsLeft > 0){
+      setTimeout(()=> initGoogleButtonWhenReady(attemptsLeft - 1), 300);
     }
-  });
+  })(15); // retries for ~4.5s total before giving up
 
   const bindPhoneContinueBtn = document.getElementById('bindPhoneContinueBtn');
   if(bindPhoneContinueBtn) bindPhoneContinueBtn.addEventListener('click', async ()=>{
