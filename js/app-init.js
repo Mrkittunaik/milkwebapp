@@ -19,7 +19,7 @@ import { initBanners } from './banners.js';
 import { initLiveLocation } from './live-location.js';
 import { initNotifications, requestPushPermission } from './notifications.js';
 import { placeRealOrder, startTrackingOrder, stopTrackingOrder, onMyOrdersChanged, fetchMyOrders } from './orders.js';
-import { sendOtp, verifyOtp, completeGoogleLogin, bindPhone, startGoogleSignIn } from './auth.js';
+import { sendOtp, verifyOtp, completeGoogleLogin, bindPhone, initGoogleSignIn } from './auth.js';
 
 // ---- Products: fetch real catalog, wire "+" buttons into the EXISTING
 // cart object that script.js already maintains (window.cart), so cart
@@ -75,7 +75,7 @@ window.PD_REAL_AUTH = {
   verifyOtp,
   completeGoogleLogin,
   bindPhone,
-  startGoogleSignIn,
+  initGoogleSignIn,
   getTokenUserId
 };
 
