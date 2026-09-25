@@ -27,7 +27,13 @@ export async function verifyOtp(phone, code) {
 // Requires adding to index.html:
 //   <script src="https://accounts.google.com/gsi/client" async defer></script>
 // and setting window.PD_GOOGLE_CLIENT_ID before this module runs.
-export function startGoogleSignIn(onCredential) {
+//
+// onCredential(credential) fires when the user actually picks an account.
+// onClosed() fires when the picker is dismissed without a pick - user hit
+// the X, pressed Escape, clicked outside it, or GIS auto-skipped it - so
+// the caller can reset its "Signing in..." button state instead of being
+// stuck until the user refreshes the page.
+export function startGoogleSignIn(onCredential, onClosed) {
   if (!window.google || !window.PD_GOOGLE_CLIENT_ID) {
     console.warn('[auth] Google Identity Services not loaded, or PD_GOOGLE_CLIENT_ID not set');
     return false;
@@ -36,7 +42,21 @@ export function startGoogleSignIn(onCredential) {
     client_id: window.PD_GOOGLE_CLIENT_ID,
     callback: (response) => onCredential(response.credential)
   });
-  window.google.accounts.id.prompt();
+  window.google.accounts.id.prompt((notification) => {
+    // isNotDisplayed(): prompt couldn't show at all (e.g. blocked/rate-limited)
+    // isSkippedMoment(): user dismissed it (X button, Escape, outside click, etc)
+    // getDismissedReason() 'credential_returned' means a credential WAS picked -
+    // that path already goes through onCredential above, so don't double-reset.
+    if (typeof onClosed !== 'function') return;
+    if (notification.isNotDisplayed && notification.isNotDisplayed()) {
+      onClosed(notification.getNotDisplayedReason && notification.getNotDisplayedReason());
+    } else if (notification.isSkippedMoment && notification.isSkippedMoment()) {
+      onClosed(notification.getSkippedReason && notification.getSkippedReason());
+    } else if (notification.isDismissedMoment && notification.isDismissedMoment()) {
+      const reason = notification.getDismissedReason && notification.getDismissedReason();
+      if (reason !== 'credential_returned') onClosed(reason);
+    }
+  });
   return true;
 }
 
