@@ -28,34 +28,33 @@ export async function verifyOtp(phone, code) {
 //   <script src="https://accounts.google.com/gsi/client" async defer></script>
 // and setting window.PD_GOOGLE_CLIENT_ID before this module runs.
 //
-// onCredential(credential) fires when the user actually picks an account.
-// onClosed() fires when the picker is dismissed without a pick - user hit
-// the X, pressed Escape, clicked outside it, or GIS auto-skipped it - so
-// the caller can reset its "Signing in..." button state instead of being
-// stuck until the user refreshes the page.
-export function startGoogleSignIn(onCredential, onClosed) {
-  if (!window.google || !window.PD_GOOGLE_CLIENT_ID) {
-    console.warn('[auth] Google Identity Services not loaded, or PD_GOOGLE_CLIENT_ID not set');
+// IMPORTANT: two things do NOT work reliably, especially on mobile:
+//   1. window.google.accounts.id.prompt() (the "One Tap" overlay) - Google
+//      silently refuses to show it in a lot of mobile contexts (iOS Safari,
+//      in-app browsers, blocked third-party cookies/no FedCM support) with
+//      zero error, so the button just does nothing.
+//   2. Calling .click() on Google's own rendered button from our JS - Google
+//      does not treat a synthetic click as a real user gesture, so the
+//      popup/redirect never opens, even though nothing throws.
+// The only flow guaranteed to work everywhere is rendering Google's real
+// button and letting the user tap IT directly. So this renders that real
+// button into #googleSignInRealBtn (visible, styled to fit) on load, and
+// our own "Continue with Google" button is hidden entirely.
+//
+// onCredential(credential) fires when the user picks an account.
+export function initGoogleSignIn(onCredential) {
+  const container = document.getElementById('googleSignInRealBtn');
+  if (!window.google || !window.PD_GOOGLE_CLIENT_ID || !container) {
+    console.warn('[auth] Google Identity Services not loaded, or PD_GOOGLE_CLIENT_ID/container missing');
     return false;
   }
   window.google.accounts.id.initialize({
     client_id: window.PD_GOOGLE_CLIENT_ID,
-    callback: (response) => onCredential(response.credential)
+    callback: (response) => onCredential(response.credential),
+    ux_mode: 'popup' // browsers/webviews that can't do a popup fall back to a full-page redirect automatically
   });
-  window.google.accounts.id.prompt((notification) => {
-    // isNotDisplayed(): prompt couldn't show at all (e.g. blocked/rate-limited)
-    // isSkippedMoment(): user dismissed it (X button, Escape, outside click, etc)
-    // getDismissedReason() 'credential_returned' means a credential WAS picked -
-    // that path already goes through onCredential above, so don't double-reset.
-    if (typeof onClosed !== 'function') return;
-    if (notification.isNotDisplayed && notification.isNotDisplayed()) {
-      onClosed(notification.getNotDisplayedReason && notification.getNotDisplayedReason());
-    } else if (notification.isSkippedMoment && notification.isSkippedMoment()) {
-      onClosed(notification.getSkippedReason && notification.getSkippedReason());
-    } else if (notification.isDismissedMoment && notification.isDismissedMoment()) {
-      const reason = notification.getDismissedReason && notification.getDismissedReason();
-      if (reason !== 'credential_returned') onClosed(reason);
-    }
+  window.google.accounts.id.renderButton(container, {
+    type: 'standard', theme: 'outline', size: 'large', width: 320, text: 'continue_with'
   });
   return true;
 }
