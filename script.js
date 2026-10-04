@@ -79,8 +79,48 @@
 
   let pendingAuthAction = null; // fn to run automatically once login succeeds
 
+  // Escapes text for safe use inside innerHTML templates.
+  function escapeHtml(v){
+    return String(v == null ? '' : v)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  }
+  window.escapeHtml = escapeHtml;
+
+  // Single exit path for every kind of logout (user tapped Log Out, session
+  // expired, account blocked). Clears the token, socket, every user-scoped
+  // storage key and Google auto-select (via PD_REAL_AUTH.logout), then does a
+  // full page reload so ALL in-memory state - cart, cached orders, live maps,
+  // timers, socket listeners, payment state - is discarded. The optional
+  // message is shown once after the reload.
+  const FLASH_KEY = 'pd_flash';
+  function forceLogout(message, opts){
+    opts = opts || {};
+    try{ clearSession(); }catch(e){}
+    try{ if(window.PD_REAL_AUTH && window.PD_REAL_AUTH.clearUserData) window.PD_REAL_AUTH.clearUserData(); }catch(e){}
+    try{
+      if(message) sessionStorage.setItem(FLASH_KEY, JSON.stringify({ message: message, openLogin: !!opts.openLogin }));
+    }catch(e){}
+    window.location.reload();
+  }
+  window.forceLogout = forceLogout;
+
+  // The API client fires this when the backend rejects our token (401).
+  window.addEventListener('pd:session-expired', ()=>{
+    if(userSession.loggedIn) forceLogout('Your session has expired. Please log in again.', { openLogin: true });
+  });
+
   // ---- Screen navigation ----
+  // Screens that show or act on personal data. A guest (or an expired session)
+  // is sent to the login gate and returned here after signing in. The backend
+  // still authorizes every request independently - this is only the UI layer.
+  const PROTECTED_SCREENS = ['account', 'details', 'payment', 'paymethods', 'track'];
+
   function goToScreen(name){
+    if(PROTECTED_SCREENS.indexOf(name) !== -1 && !userSession.loggedIn){
+      openLoginGate(()=> goToScreen(name));
+      return;
+    }
     const leavingTrack = document.getElementById('screen-track')?.classList.contains('active') && name !== 'track';
     document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
     const target = document.getElementById('screen-' + name);
@@ -704,7 +744,9 @@
       const selectedMethod = document.querySelector('.pay-method.selected');
       const method = selectedMethod ? selectedMethod.dataset.method : 'upi';
 
+      if(paymentInFlight) return; // ignore double taps while a payment/order request is running
       if(method === 'cod'){
+        paymentInFlight = true;
         placeOrder('cod', null);
         return;
       }
@@ -748,16 +790,45 @@
     return Object.values(cart).map(item => ({ productId: item.id, qty: item.qty }));
   }
 
+  // ---- Payment safety state ----
+  let paymentInFlight = false;                 // blocks duplicate taps / duplicate orders
+  const UNPLACED_KEY = 'pd_unplaced_payment';  // verified payment whose order isn't confirmed yet
+  function isLocalDevHost(){
+    return ['localhost','127.0.0.1','[::1]',''].indexOf(window.location.hostname) !== -1;
+  }
+  function saveUnplaced(rec){ try{ localStorage.setItem(UNPLACED_KEY, JSON.stringify(rec)); }catch(e){} }
+  function loadUnplaced(){ try{ return JSON.parse(localStorage.getItem(UNPLACED_KEY) || 'null'); }catch(e){ return null; } }
+  function clearUnplaced(){ try{ localStorage.removeItem(UNPLACED_KEY); }catch(e){} }
+
+  // Single source for where an order is delivered (saved address first, then
+  // the freshest GPS fix) - used by placeOrder and by payment recovery.
+  function getOrderLocationFields(){
+    const selectedAddr = savedAddresses.find(a => a.id === orderDetails.addressId) || savedAddresses[0];
+    const liveFix = window.PD_LIVE_LOCATION;
+    const hasSaved = selectedAddr && typeof selectedAddr.lat === 'number';
+    return {
+      address: selectedAddr ? selectedAddr.full : '',
+      lat: hasSaved ? selectedAddr.lat : (liveFix ? liveFix.lat : undefined),
+      lng: (selectedAddr && typeof selectedAddr.lng === 'number') ? selectedAddr.lng : (liveFix ? liveFix.lng : undefined),
+      locationAccuracy: hasSaved ? (typeof selectedAddr.accuracy === 'number' ? selectedAddr.accuracy : undefined) : (liveFix ? liveFix.accuracy : undefined)
+    };
+  }
+
   async function launchPaymentGateway(method){
+    if(paymentInFlight) return;
+    paymentInFlight = true;
     payNowBtn.textContent = 'Processing...';
     payNowBtn.disabled = true;
 
     // Start (or resume) a pending-payment record so a back/cancel mid-flow
     // can be detected and offered a 2-minute resume window. See the
     // PAYMENT RESUME + HISTORY module near the end of this file.
-    const pending = startPendingPayment(method);
+    let pending = null;
+    try{ pending = startPendingPayment(method); }
+    catch(e){ console.warn('Could not record pending payment locally:', e); }
 
     function cancelled(msg){
+      paymentInFlight = false;
       payNowBtn.textContent = 'Pay & Place Order';
       payNowBtn.disabled = false;
       showToast(msg);
@@ -777,6 +848,12 @@
     // clearly-marked dev payment ref, so the full UI flow (cart -> pay ->
     // success -> tracking) can be built/tested before real keys exist.
     if (created.dev){
+      // A "dev" response means the server has no live payment keys. Never let a
+      // public site turn that into an order marked as paid.
+      if(!isLocalDevHost()){
+        cancelled('Online payment is temporarily unavailable. Please try again later or choose Cash on Delivery.');
+        return;
+      }
       placeOrder(method, 'DEV_PAY_' + Date.now(), pending, created.orderId);
       return;
     }
@@ -808,6 +885,18 @@
             cancelled('Payment could not be verified - if money was deducted, it will be auto-refunded. Please try again.');
             return;
           }
+          // Payment is genuinely verified by the backend. Remember it durably BEFORE
+          // creating the order, so if the tab dies / network drops in between, the
+          // order can be completed on the next visit instead of being lost.
+          const loc = getOrderLocationFields();
+          saveUnplaced({
+            uid: window.PD_REAL_AUTH && window.PD_REAL_AUTH.getTokenUserId ? window.PD_REAL_AUTH.getTokenUserId() : null,
+            paymentRef: response.razorpay_payment_id,
+            paymentOrderId: response.razorpay_order_id,
+            items: cartToItemsPayload(),
+            address: loc.address, lat: loc.lat, lng: loc.lng, locationAccuracy: loc.locationAccuracy,
+            at: Date.now()
+          });
           placeOrder(method, response.razorpay_payment_id, pending, response.razorpay_order_id);
         } catch(err){
           cancelled(err.message || 'Payment verification failed - please try again');
@@ -828,23 +917,22 @@
   }
 
   async function placeOrder(method, paymentRef, pending, paymentOrderId){
-    payNowBtn.textContent = 'Pay & Place Order';
-    payNowBtn.disabled = false;
+    paymentInFlight = true;
+    payNowBtn.textContent = 'Placing order...';
+    payNowBtn.disabled = true;
+    try{
+      await placeOrderInner(method, paymentRef, pending, paymentOrderId);
+    } finally {
+      paymentInFlight = false;
+      payNowBtn.textContent = 'Pay & Place Order';
+      payNowBtn.disabled = false;
+    }
+  }
 
-    const selectedAddr = savedAddresses.find(a => a.id === orderDetails.addressId) || savedAddresses[0];
-
-    // Prefer the saved address's coordinates (user explicitly picked/edited
-    // that pin), but if it has none, fall back to the freshest exact GPS fix
-    // from the live-location widget (js/live-location.js) rather than
-    // sending no location at all.
-    const liveFix = window.PD_LIVE_LOCATION;
-    const orderLat = (selectedAddr && typeof selectedAddr.lat === 'number') ? selectedAddr.lat : (liveFix ? liveFix.lat : undefined);
-    const orderLng = (selectedAddr && typeof selectedAddr.lng === 'number') ? selectedAddr.lng : (liveFix ? liveFix.lng : undefined);
-    // Only meaningful when we actually used the live fix (a saved address's
-    // own accuracy, if any, is tracked separately on that address record).
-    const orderLocationAccuracy = (selectedAddr && typeof selectedAddr.lat === 'number')
-      ? (typeof selectedAddr.accuracy === 'number' ? selectedAddr.accuracy : undefined)
-      : (liveFix ? liveFix.accuracy : undefined);
+  async function placeOrderInner(method, paymentRef, pending, paymentOrderId){
+    const loc = getOrderLocationFields();
+    const orderLat = loc.lat, orderLng = loc.lng, orderLocationAccuracy = loc.locationAccuracy;
+    const selectedAddr = { full: loc.address };
 
     try{
       const order = await window.PD_REAL_ORDERS.placeRealOrder({
@@ -857,13 +945,15 @@
         paymentRef: paymentRef || null,
         paymentOrderId: paymentOrderId || null
       });
+      clearUnplaced(); // order exists now - nothing left to recover
       window.__lastOrder = order; // real Order document from the backend
 
       document.getElementById('successOverlay').classList.add('show');
 
       // Mark the pending attempt as paid + push it into payment history
       // (used by the Orders screen and the bill/invoice view).
-      completePendingPayment(pending || startPendingPayment(method), paymentRef, cart);
+      try{ completePendingPayment(pending || startPendingPayment(method), paymentRef, cart); }
+      catch(e){ console.warn('Local payment record failed (order itself was created):', e); }
 
       // Start real live tracking for this order (socket room join + map/
       // marker), replacing the old setTimeout-based simulation entirely.
@@ -884,10 +974,48 @@
       Object.keys(cart).forEach(k=>delete cart[k]);
       renderCart();
     } catch(err){
-      showToast(err.message || 'Could not place order - please try again');
-      failPendingPayment(pending, 'failed');
+      if(paymentRef && method !== 'cod' && loadUnplaced()){
+        // Money is already verified as received - never invite a second payment.
+        showToast('Payment received. Confirming your order - please do not pay again.');
+        setTimeout(recoverUnplacedPayment, 4000);
+      } else {
+        showToast(err.message || 'Could not place order - please try again');
+        failPendingPayment(pending, 'failed');
+      }
     }
   }
+
+  // Completes an order whose payment was verified but whose order request never
+  // finished (tab closed, network dropped). Checks existing orders first so a
+  // payment can never produce two orders.
+  let recovering = false;
+  async function recoverUnplacedPayment(){
+    if(recovering) return;
+    const rec = loadUnplaced();
+    if(!rec || !rec.paymentRef || !window.PD_REAL_ORDERS || !window.PD_REAL_AUTH) return;
+    const uid = window.PD_REAL_AUTH.getTokenUserId();
+    if(!uid || (rec.uid && String(rec.uid) !== String(uid))){ clearUnplaced(); return; }
+    recovering = true;
+    try{
+      const existing = await window.PD_REAL_ORDERS.fetchMyOrders();
+      const already = (existing || []).some(o => o.paymentRef === rec.paymentRef ||
+        (rec.paymentOrderId && o.paymentOrderId === rec.paymentOrderId));
+      if(already){ clearUnplaced(); return; }
+      const recCart = {};
+      (rec.items || []).forEach(i => { recCart[i.productId] = { id: i.productId, qty: i.qty }; });
+      await window.PD_REAL_ORDERS.placeRealOrder({
+        cart: recCart, address: rec.address, lat: rec.lat, lng: rec.lng,
+        locationAccuracy: rec.locationAccuracy,
+        paymentStatus: 'paid', paymentRef: rec.paymentRef, paymentOrderId: rec.paymentOrderId
+      });
+      clearUnplaced();
+      showToast('Your payment was received and your order is confirmed');
+      if(typeof window.renderOrderHistory === 'function') window.renderOrderHistory();
+    }catch(e){
+      // Keep the record; we'll try again next visit.
+    } finally { recovering = false; }
+  }
+  window.recoverUnplacedPayment = recoverUnplacedPayment;
 
   const successDoneBtn = document.getElementById('successDoneBtn');
   if(successDoneBtn){
@@ -997,10 +1125,14 @@
   });
 
   function setDeliveryAddress(text){
-    addrLabel.innerHTML = text;
-    if(payAddr) payAddr.innerHTML = text;
+    // Callers pass a plain string that may contain the literal "&middot;"
+    // separator. Everything else (labels, user-typed address text, reverse-
+    // geocoded names) is escaped so it can never inject markup.
+    const safe = escapeHtml(String(text).replace(/&middot;/g, '\u00b7')).replace(/\u00b7/g, '&middot;');
+    addrLabel.innerHTML = safe;
+    if(payAddr) payAddr.innerHTML = safe;
     const settingsAddr = document.querySelector('.settings-row-label');
-    if(settingsAddr) settingsAddr.innerHTML = text.replace(/<[^>]+>/g,'');
+    if(settingsAddr) settingsAddr.textContent = String(text).replace(/&middot;/g, '\u00b7').replace(/<[^>]+>/g,'');
   }
 
   // Compass direction from the delivery pin to a nearby reference point
@@ -1217,8 +1349,8 @@
       card.innerHTML = `
         <div class="det-addr-ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3A3110" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg></div>
         <div style="flex:1;">
-          <div class="det-addr-label">${addr.label}</div>
-          <div class="det-addr-full">${addr.full}</div>
+          <div class="det-addr-label">${escapeHtml(addr.label)}</div>
+          <div class="det-addr-full">${escapeHtml(addr.full)}</div>
         </div>
         <div class="det-addr-radio"></div>
         <div class="det-addr-delete" title="Remove this address">
@@ -1873,6 +2005,7 @@
     saveSession();
     showToast('Welcome, ' + (userSession.name || 'there') + '!');
     renderAccountScreen();
+    try{ if(window.PD_REAL_AUTH && window.PD_REAL_AUTH.startUserRealtime) window.PD_REAL_AUTH.startUserRealtime(); }catch(e){}
     if(pendingAuthAction){
       const action = pendingAuthAction;
       pendingAuthAction = null;
@@ -2121,7 +2254,7 @@
       orderDetails.phone = user.phone;
       completeLogin();
     } catch(err){
-      showToast(err.message || 'Incorrect OTP');
+      showToast(err.status === 401 ? 'Invalid login details. Please try again.' : (err.message || 'Incorrect OTP'));
     }
   });
 
@@ -2131,28 +2264,72 @@
 
   const accountLogoutRow = document.getElementById('accountLogoutRow');
   if(accountLogoutRow) accountLogoutRow.addEventListener('click', ()=>{
-    clearSession();
-    renderAccountScreen();
-    showToast('Logged out');
-    goToScreen('home');
+    forceLogout('Logged out');
   });
 
-  // ---- Restore saved session on load; if none/invalid, guest browses freely.
-  //      If admin has blocked the account, force back to guest + login gate. ----
+  // ---- Restore session on load. The cached userSession in localStorage is
+  //      only a hint for fast first paint - the backend is the authority:
+  //      the JWT must still be valid (GET /api/users/me) or we fall back to a
+  //      clean logged-out state and the login screen. A network failure keeps
+  //      the cached view so a flaky connection doesn't log anyone out. ----
   loadSession();
-  (async function(){
-    if(userSession.loggedIn){
-      const blocked = await checkAccountBlocked();
-      if(blocked){
-        clearSession();
-        renderAccountScreen();
-        showToast('Your account has been blocked. Please contact support.');
-        openLoginGate();
-        return;
-      }
+
+  function whenRealAuthReady(cb, attemptsLeft){
+    if(window.PD_REAL_AUTH && typeof window.PD_REAL_AUTH.verifySession === 'function'){ cb(window.PD_REAL_AUTH); return; }
+    if(attemptsLeft > 0) setTimeout(()=> whenRealAuthReady(cb, attemptsLeft - 1), 200);
+    else cb(null);
+  }
+
+  // One-time message left by forceLogout() before the reload.
+  (function showFlashAfterReload(){
+    let flash = null;
+    try{
+      const raw = sessionStorage.getItem(FLASH_KEY);
+      if(raw){ flash = JSON.parse(raw); sessionStorage.removeItem(FLASH_KEY); }
+    }catch(e){}
+    if(!flash) return;
+    setTimeout(()=>{
+      if(flash.message) showToast(flash.message);
+      if(flash.openLogin) openLoginGate();
+    }, 400);
+  })();
+
+  renderAccountScreen(); // instant paint from cache (guest view if none)
+
+  whenRealAuthReady(async (real)=>{
+    const hadCachedSession = userSession.loggedIn;
+    const hasToken = !!(real && real.isLoggedIn && real.isLoggedIn());
+    if(!hadCachedSession && !hasToken) return; // plain guest - nothing to verify
+
+    const result = real ? await real.verifySession() : null;
+
+    if(result === null){
+      // No valid session (token missing/expired/rejected): clean logged-out state.
+      forceLogout(hadCachedSession ? 'Your session has expired. Please log in again.' : null, { openLogin: hadCachedSession });
+      return;
+    }
+    if(result.offline){
+      // Backend unreachable: keep whatever we already show, retry on next load.
+      return;
+    }
+
+    // Authoritative identity from the backend replaces any cached values.
+    userSession.loggedIn = true;
+    if(result.googleId !== undefined) userSession.googleId = result.googleId;
+    if(result.email !== undefined) userSession.email = result.email;
+    if(result.name !== undefined) userSession.name = result.name;
+    if(result.phone !== undefined) userSession.phone = result.phone;
+    saveSession();
+
+    const blocked = await checkAccountBlocked();
+    if(blocked){
+      forceLogout('Your account has been blocked. Please contact support.', { openLogin: true });
+      return;
     }
     renderAccountScreen();
-  })();
+    if(real.startUserRealtime) real.startUserRealtime();
+    if(typeof window.recoverUnplacedPayment === 'function') window.recoverUnplacedPayment();
+  }, 25); // waits up to ~5s for the module script to finish loading
 
   // ---- Gate: Account tab tap while logged out ----
   document.querySelectorAll('.nav-item[data-screen="account"]').forEach(item=>{
@@ -2904,6 +3081,14 @@
     return pending;
   }
 
+  // Cart total in paise, used ONLY for the local "payment in progress" record
+  // and display. This function was called but never defined in the original
+  // code, which crashed every payment attempt. The amount actually charged is
+  // always computed by the backend from the item ids and quantities.
+  function getOrderTotalPaise(){
+    return Math.round(Object.values(cart).reduce((sum, i) => sum + i.price * i.qty, 0) * 100);
+  }
+
   function cartSnapshot(){
     return Object.keys(cart).map(k => ({ name: cart[k].name, qty: cart[k].qty, price: cart[k].price }));
   }
@@ -3080,7 +3265,9 @@
       try{
         myOrders = await window.PD_REAL_ORDERS.fetchMyOrders();
       }catch(e){
-        list.innerHTML = '<div class="order-empty">Couldn\u2019t load your orders \u2014 pull to refresh.</div>';
+        list.innerHTML = '<div class="order-empty">Something went wrong.<br>Please try again.<br><span class="order-link" id="ordersRetryBtn" style="display:inline-block;margin-top:8px;">Retry</span></div>';
+        const rb = document.getElementById('ordersRetryBtn');
+        if(rb) rb.addEventListener('click', ()=> renderOrderHistory());
         return;
       }
     }
@@ -3092,41 +3279,41 @@
 
     const html = [];
     myOrders.forEach((o)=>{
-      const itemsText = (o.items || []).map(it => it.name + (it.qty > 1 ? ' \u00d7 ' + it.qty : '')).join(', ');
+      const itemsText = escapeHtml((o.items || []).map(it => it.name + (it.qty > 1 ? ' \u00d7 ' + it.qty : '')).join(', '));
       const isActive = ACTIVE_STATUSES.includes(o.status);
 
       if(isActive && o.assigned){
         const slot = o.slot || (new Date(o.createdAt).getHours() < 12 ? 'morning' : 'afternoon');
         const meta = SLOT_META[slot] || SLOT_META.morning;
         html.push(`
-          <div class="live-order-card" data-card-key="${o._id}">
+          <div class="live-order-card" data-card-key="${escapeHtml(o._id)}">
             <div class="live-order-head">
               <div>
                 <div class="live-order-slot">${meta.icon} ${meta.label}</div>
-                <div class="live-order-window">${meta.window} &middot; #${o.orderCode}</div>
+                <div class="live-order-window">${meta.window} &middot; #${escapeHtml(o.orderCode)}</div>
               </div>
               <div class="live-order-eta-pill" data-eta-pill>${o.status === 'out' ? 'On the way' : 'Preparing'}</div>
             </div>
-            <div class="live-order-map" id="map-${o._id}"></div>
+            <div class="live-order-map" id="map-${escapeHtml(o._id)}"></div>
             <div class="live-order-stats">
               <div class="live-order-stat"><span data-dist>-- km</span><small>Distance</small></div>
               <div class="live-order-stat"><span data-time>-- min</span><small>Reaching in</small></div>
               <div class="live-order-stat"><span>${itemsText.length > 22 ? itemsText.slice(0,22) + '\u2026' : itemsText}</span><small>Items</small></div>
             </div>
             <div class="live-order-rider">
-              <div class="live-order-rider-avatar">${(o.assigned.name || '?').charAt(0)}</div>
+              <div class="live-order-rider-avatar">${escapeHtml((o.assigned.name || '?').charAt(0))}</div>
               <div class="live-order-rider-info">
-                <div class="live-order-rider-name">${o.assigned.name || 'Delivery partner'}</div>
+                <div class="live-order-rider-name">${escapeHtml(o.assigned.name || 'Delivery partner')}</div>
                 <div class="live-order-rider-sub">Delivery partner</div>
               </div>
-              <a class="live-order-call-btn" href="tel:${o.assigned.phone || ''}" aria-label="Call delivery partner">
+              <a class="live-order-call-btn" href="tel:${escapeHtml(String(o.assigned.phone || '').replace(/[^0-9+]/g,''))}" aria-label="Call delivery partner">
                 <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
                 Call
               </a>
             </div>
             <div class="live-order-actions">
-              <span class="order-link" data-track-id="${o._id}">Open full tracking</span>
-              <span class="order-link" data-bill-id="${o._id}">View Bill</span>
+              <span class="order-link" data-track-id="${escapeHtml(o._id)}">Open full tracking</span>
+              <span class="order-link" data-bill-id="${escapeHtml(o._id)}">View Bill</span>
             </div>
           </div>`);
       } else if(isActive){
@@ -3138,7 +3325,7 @@
         html.push(`
           <div class="order-card">
             <div class="order-top"><div>
-              <div class="order-id">#${o.orderCode}</div>
+              <div class="order-id">#${escapeHtml(o.orderCode)}</div>
               <div class="order-date">${statusLabel} &middot; ${formatOrderDate(new Date(o.createdAt))}</div>
             </div><div class="order-status pending">${statusLabel}</div></div>
             <div class="order-items">${itemsText}</div>
@@ -3148,11 +3335,11 @@
         const statusClass = o.status === 'delivered' ? 'done' : 'pending';
         const statusLabel = o.status === 'delivered' ? 'Delivered' : 'Cancelled';
         const actions = [];
-        if(o.status === 'delivered') actions.push('<span class="order-link" data-bill-id="' + o._id + '">View Bill</span>');
+        if(o.status === 'delivered') actions.push('<span class="order-link" data-bill-id="' + escapeHtml(o._id) + '">View Bill</span>');
         html.push(
           '<div class="order-card">' +
             '<div class="order-top"><div>' +
-              '<div class="order-id">#' + o.orderCode + '</div>' +
+              '<div class="order-id">#' + escapeHtml(o.orderCode) + '</div>' +
               '<div class="order-date">' + statusLabel + ' &middot; ' + formatOrderDate(new Date(o.createdAt)) + '</div>' +
             '</div><div class="order-status ' + statusClass + '">' + statusLabel + '</div></div>' +
             '<div class="order-items">' + itemsText + '</div>' +
@@ -3284,7 +3471,7 @@
     stampEl.classList.toggle('failed', order.status !== 'paid');
 
     document.getElementById('billTableBody').innerHTML = order.items.map(it =>
-      '<tr><td>' + it.name + '</td><td>' + it.qty + '</td><td>\u20b9' + Math.round(it.price * it.qty).toLocaleString('en-IN') + '</td></tr>'
+      '<tr><td>' + escapeHtml(it.name) + '</td><td>' + escapeHtml(it.qty) + '</td><td>\u20b9' + Math.round(it.price * it.qty).toLocaleString('en-IN') + '</td></tr>'
     ).join('');
     document.getElementById('billSubtotal').textContent = '\u20b9' + Math.round(order.total).toLocaleString('en-IN');
     document.getElementById('billGrandTotal').textContent = '\u20b9' + Math.round(order.total).toLocaleString('en-IN');
@@ -3607,14 +3794,14 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!suggestBox) return;
     positionSuggestions();
     if (!matches.length) {
-      suggestBox.innerHTML = `<div class="nss-empty">No products match "${term}"</div>`;
+      suggestBox.innerHTML = `<div class="nss-empty">No products match "${escapeHtml(term)}"</div>`;
       suggestBox.style.display = 'block';
       return;
     }
     suggestBox.innerHTML = matches.map(p => `
-      <div class="nss-item" data-id="${p._id}">
-        <span>${p.name}</span>
-        <span class="nss-cat">${p.category || ''}</span>
+      <div class="nss-item" data-id="${escapeHtml(p._id)}">
+        <span>${escapeHtml(p.name)}</span>
+        <span class="nss-cat">${escapeHtml(p.category || '')}</span>
       </div>
     `).join('');
     suggestBox.style.display = 'block';
