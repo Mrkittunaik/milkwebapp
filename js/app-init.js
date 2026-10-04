@@ -11,7 +11,7 @@
    on http://localhost:5000 (see index.html patch notes).
 ========================================================= */
 
-import { isLoggedIn, getTokenUserId, usersApi, paymentsApi } from './api.js';
+import { isLoggedIn, getTokenUserId, usersApi, paymentsApi, walletApi } from './api.js';
 import { connectSocket } from './socket.js';
 import { initProducts, getProductById, searchProducts, setSearchTerm, highlightInHomeRail } from './products.js';
 import { initPlans, getPlanById } from './plan.js';
@@ -62,6 +62,10 @@ initLiveLocation();
 // ---- Search: expose real product search to script.js's top-nav search
 // box (see the TOP NAV SEARCH block at the bottom of script.js). ----
 window.PD_SEARCH = { searchProducts, setSearchTerm, highlightInHomeRail };
+
+// ---- Wallet: routes don't exist on the backend yet; js/account-hub.js's
+// walletService only uses this once its BACKEND_READY flag is turned on. ----
+window.PD_WALLET = walletApi;
 
 // ---- Own profile: expose real update-profile call to script.js's Edit
 // Profile modal on the Account screen. ----
@@ -120,17 +124,13 @@ async function startUserRealtime() {
 
   initNotifications({
     myUserId,
-    onBadgeUpdate: (count) => {
-      const dot = document.getElementById('subBellDot');
-      if (dot) dot.classList.toggle('show', count > 0);
-      const topBadge = document.getElementById('topNotifBadge');
-      if (topBadge) {
-        topBadge.textContent = count > 9 ? '9+' : String(count);
-        topBadge.style.display = count > 0 ? 'flex' : 'none';
-      }
+    onBadgeUpdate: () => {
+      // Unread-aware badge (js/account-hub.js merges local + live notifications).
+      if (window.PD_HUB) window.PD_HUB.syncBadge();
     },
     onListUpdate: (list) => {
       window.__liveNotifications = list;
+      if (window.PD_HUB) window.PD_HUB.onNotificationsChanged();
       if (typeof window.renderNotifList === 'function') window.renderNotifList();
     }
   });
