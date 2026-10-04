@@ -8,6 +8,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="css/live-features.css">
+<link rel="stylesheet" href="css/account-hub.css">
 <script>window.PD_API_BASE = "https://pakkabackend.onrender.com";</script>
 <!-- Google Sign-In: replace YOUR_CLIENT_ID_HERE below with the real OAuth
      Client ID from https://console.cloud.google.com/apis/credentials
@@ -381,8 +382,9 @@
 
   <!-- WISHLIST SCREEN -->
   <div class="screen" id="screen-wishlist">
-    <div class="section-head" style="margin-top:2px;">
-      <div class="section-title">Your <span>Wishlist</span></div>
+    <div class="screen-header-row">
+      <button class="back-btn" type="button" data-back="account" aria-label="Back"><span class="ic" data-ic="back"></span></button>
+      <div class="section-title" style="margin:0;">Your <span>Wishlist</span> <span class="count-pill" id="wishCountPill" style="display:none;"></span></div>
     </div>
     <div class="wish-grid" id="wishGrid"></div>
     <div class="wish-empty" id="wishEmpty" style="display:none;">
@@ -461,12 +463,14 @@
   <!-- PAYMENT METHODS SCREEN -->
   <div class="screen" id="screen-paymethods">
     <div class="screen-header-row" style="margin-top:2px;">
-      <div class="back-btn" data-goto="account">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
-      </div>
+      <button class="back-btn" type="button" data-back="account" aria-label="Back"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg></button>
       <div class="section-title" style="margin:0;">Payment <span>Methods</span></div>
     </div>
 
+    <div class="hub-label">Available at checkout</div>
+    <div class="hub-group" id="payAvailList"></div>
+    <div class="info-note flat"><span class="ic" data-ic="info"></span>Card details are entered securely at payment time. We never keep card numbers in the app.</div>
+    <div class="hub-label" id="payUsedLabel" style="display:none;">Used before</div>
     <!-- Populated from past paid orders' method field (script.js
          renderPaymentMethodsScreen()). Empty state shown if the user
          has never completed a paid order yet. -->
@@ -476,8 +480,8 @@
       <div class="sub-empty-ic">
         <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="1.6"><rect x="2" y="5" width="20" height="14" rx="3"/><path d="M2 10h20"/></svg>
       </div>
-      <div class="sub-empty-title">No saved payment methods</div>
-      <div class="sub-empty-sub">Once you complete an order, the payment method you used will be saved here for next time.</div>
+      <div class="sub-empty-title">No payment history yet</div>
+      <div class="sub-empty-sub">Once you complete an order, the method you used will show up here.</div>
     </div>
   </div>
 
@@ -485,6 +489,11 @@
   <div class="screen" id="screen-orders">
     <div class="section-head" style="margin-top:2px;">
       <div class="section-title">Past <span>Orders</span></div>
+    </div>
+    <div class="stat-row" id="ordersSummary" style="display:none;" aria-label="Order summary">
+      <div class="stat-tile"><b id="ordStatTotal">0</b><span>Total</span></div>
+      <div class="stat-tile"><b id="ordStatActive">0</b><span>Active</span></div>
+      <div class="stat-tile"><b id="ordStatDelivered">0</b><span>Delivered</span></div>
     </div>
     <div id="ordersList"><!-- rendered by renderOrderHistory() from paymentHistory --></div>
 
@@ -594,25 +603,217 @@
 
   <!-- ACCOUNT SCREEN -->
   <div class="screen" id="screen-account">
-    <div class="account-header" id="accountLoggedInView" style="cursor:pointer;">
-      <div class="account-avatar">K</div>
-      <div>
-        <div class="account-name">Kittu Rathod</div>
-        <div class="account-phone">+91 98xxxxxx21</div>
+    <!-- Logged-in dashboard. Filled by js/account-hub.js from the live session. -->
+    <div id="accountLoggedInView" class="hub" style="display:none;">
+      <div class="hub-topbar">
+        <h1 class="hub-title">Account</h1>
+        <button class="hub-icon-btn" type="button" data-goto="settings" aria-label="Open settings"><span class="ic" data-ic="settings"></span></button>
       </div>
+
+      <section class="acc-profile-card" aria-label="Profile summary">
+        <div class="acc-profile-main">
+          <button class="avatar avatar-lg" type="button" data-goto="profile" aria-label="Open your profile" data-avatar></button>
+          <div class="acc-profile-info">
+            <div class="account-name" data-bind="name">&nbsp;</div>
+            <div class="account-phone" data-bind="phone"></div>
+            <div class="acc-email" data-bind="email"></div>
+          </div>
+          <button class="hub-pill-btn" type="button" data-action="edit-profile" aria-label="Edit profile"><span class="ic" data-ic="edit"></span>Edit</button>
+        </div>
+        <div class="acc-progress" role="group" aria-label="Profile completion">
+          <div class="acc-progress-row"><span>Profile completion</span><b data-bind="pct">0%</b></div>
+          <div class="progress-track"><div class="progress-fill" data-bind="pctbar" style="width:0%"></div></div>
+          <div class="acc-progress-hint" data-bind="pcthint"></div>
+        </div>
+      </section>
+
+      <div class="hub-label">Quick actions</div>
+      <div class="quick-grid">
+        <button class="quick-card" type="button" data-goto="wallet"><span class="quick-ic"><span class="ic" data-ic="wallet"></span></span><span class="quick-val" data-bind="walletVal">₹0</span><span class="quick-sub">Wallet balance</span></button>
+        <button class="quick-card" type="button" data-goto="orders"><span class="quick-ic"><span class="ic" data-ic="bag"></span></span><span class="quick-val" data-bind="ordersVal">–</span><span class="quick-sub">Total orders</span></button>
+        <button class="quick-card" type="button" data-goto="subscription"><span class="quick-ic"><span class="ic" data-ic="receipt"></span></span><span class="quick-val" data-bind="subVal">–</span><span class="quick-sub">Milk plan</span></button>
+        <button class="quick-card" type="button" data-goto="wishlist"><span class="quick-ic"><span class="ic" data-ic="heart"></span></span><span class="quick-val" data-bind="wishVal">0</span><span class="quick-sub">Saved items</span></button>
+      </div>
+
+      <div class="hub-label">My account</div>
+      <div class="hub-group">
+        <button class="hub-row" type="button" data-goto="profile"><span class="hub-row-ic"><span class="ic" data-ic="user"></span></span><span class="hub-row-text"><b>Profile</b><small>Name, email &amp; account details</small></span><span class="ic chev" data-ic="chevron"></span></button>
+        <button class="hub-row" type="button" data-goto="addresses"><span class="hub-row-ic"><span class="ic" data-ic="pin"></span></span><span class="hub-row-text"><b>Addresses</b><small data-bind="addrSub">Delivery addresses</small></span><span class="ic chev" data-ic="chevron"></span></button>
+        <button class="hub-row" type="button" data-goto="wallet"><span class="hub-row-ic"><span class="ic" data-ic="wallet"></span></span><span class="hub-row-text"><b>Wallet</b><small data-bind="walletSub">Balance &amp; transactions</small></span><span class="ic chev" data-ic="chevron"></span></button>
+        <button class="hub-row" type="button" id="orderHistoryRow" data-goto="orders"><span class="hub-row-ic"><span class="ic" data-ic="bag"></span></span><span class="hub-row-text"><b>Orders</b><small data-bind="ordersSub">Order history &amp; tracking</small></span><span class="ic chev" data-ic="chevron"></span></button>
+        <button class="hub-row" type="button" id="manageSubRow" data-goto="subscription"><span class="hub-row-ic"><span class="ic" data-ic="receipt"></span></span><span class="hub-row-text"><b>Subscriptions</b><small data-bind="subSub">Manage your milk plan</small></span><span class="ic chev" data-ic="chevron"></span></button>
+        <button class="hub-row" type="button" id="paymentMethodsRow" data-goto="paymethods"><span class="hub-row-ic"><span class="ic" data-ic="card"></span></span><span class="hub-row-text"><b>Payment Methods</b><small>UPI, cards, wallet &amp; cash</small></span><span class="ic chev" data-ic="chevron"></span></button>
+        <button class="hub-row" type="button" data-goto="wishlist"><span class="hub-row-ic"><span class="ic" data-ic="heart"></span></span><span class="hub-row-text"><b>Wishlist</b><small data-bind="wishSub">Saved products</small></span><span class="ic chev" data-ic="chevron"></span></button>
+      </div>
+
+      <div class="hub-label">Preferences</div>
+      <div class="hub-group">
+        <button class="hub-row" type="button" data-goto="notifications"><span class="hub-row-ic"><span class="ic" data-ic="bell"></span></span><span class="hub-row-text"><b>Notifications</b><small data-bind="notifSub">Order &amp; delivery updates</small></span><span class="ic chev" data-ic="chevron"></span></button>
+        <button class="hub-row" type="button" data-goto="settings"><span class="hub-row-ic"><span class="ic" data-ic="settings"></span></span><span class="hub-row-text"><b>Settings</b><small>Preferences, support &amp; security</small></span><span class="ic chev" data-ic="chevron"></span></button>
+      </div>
+
+      <div class="hub-label">Support</div>
+      <div class="hub-group">
+        <button class="hub-row" type="button" id="helpSupportRow" data-goto="orders"><span class="hub-row-ic"><span class="ic" data-ic="help"></span></span><span class="hub-row-text"><b>Help &amp; Support</b><small>WhatsApp, email or call us</small></span><span class="ic chev" data-ic="chevron"></span></button>
+      </div>
+
+      <button class="hub-logout" type="button" id="accountLogoutRow"><span class="ic" data-ic="logout"></span>Log out</button>
     </div>
+
     <div class="account-guest-view" id="accountGuestView" style="display:none; text-align:center; padding:24px 10px;">
       <div style="font-weight:800; font-size:16px; margin-bottom:4px;">You're browsing as a guest</div>
       <div style="font-size:12.5px; color:var(--muted); margin-bottom:16px;">Log in to place orders, save addresses &amp; track deliveries.</div>
       <button class="pkg-btn ripple" id="accountLoginBtn" style="width:100%;">Login</button>
     </div>
-    <div class="settings-group" id="accountSettingsGroup">
-      <div class="settings-row" id="settingsAddrRow" style="cursor:pointer;"><div class="settings-row-label">Home &middot; Kittu Nagar</div><div class="settings-row-sub">Delivery address</div></div>
-      <div class="settings-row" id="manageSubRow" data-goto="subscription"><div class="settings-row-label">Manage Subscriptions</div></div>
-      <div class="settings-row" id="paymentMethodsRow" data-goto="paymethods"><div class="settings-row-label">Payment Methods</div></div>
-      <div class="settings-row" id="orderHistoryRow" data-goto="orders"><div class="settings-row-label">Order History</div></div>
-      <div class="settings-row" id="helpSupportRow" data-goto="orders"><div class="settings-row-label">Help &amp; Support</div></div>
-      <div class="settings-row" id="accountLogoutRow"><div class="settings-row-label" style="color:var(--danger);">Log Out</div></div>
+  </div>
+
+  <!-- PROFILE -->
+  <div class="screen" id="screen-profile">
+    <div class="screen-header-row"><button class="back-btn" type="button" data-back="account" aria-label="Back"><span class="ic" data-ic="back"></span></button><div class="section-title" style="margin:0;">My <span>Profile</span></div></div>
+
+    <section class="profile-hero">
+      <div class="avatar avatar-xl" data-avatar aria-hidden="true"></div>
+      <div class="profile-hero-name" data-bind="name"></div>
+      <div class="profile-hero-line" data-bind="phone"></div>
+      <div class="profile-hero-line" data-bind="email"></div>
+      <div class="verified-chip" data-bind="verified" style="display:none;"><span class="ic" data-ic="check"></span>Verified</div>
+      <button class="hub-primary-btn" type="button" data-action="edit-profile"><span class="ic" data-ic="edit"></span>Edit Profile</button>
+      <!-- Avatar upload: the backend has no image endpoint yet, so there is deliberately no upload control.
+           data-avatar elements already switch to an <img> when the profile exposes an image URL. -->
+    </section>
+
+    <div class="profile-state" id="profileState" style="display:none;"></div>
+
+    <div class="hub-label">Personal information</div>
+    <div class="info-card">
+      <div class="info-row"><span>Full name</span><b data-bind="name"></b></div>
+      <div class="info-row"><span>Mobile number</span><b data-bind="phoneFull"></b></div>
+      <div class="info-row"><span>Email</span><b data-bind="emailOrDash"></b></div>
+    </div>
+
+    <div class="hub-label">Delivery information</div>
+    <div class="info-card">
+      <div class="info-row stack"><span>Default address</span><b data-bind="defaultAddr"></b></div>
+      <div class="info-row"><span>Saved addresses</span><b data-bind="addrCount"></b></div>
+      <div class="info-actions">
+        <button class="hub-ghost-btn" type="button" data-goto="addresses"><span class="ic" data-ic="pin"></span>Change address</button>
+        <button class="hub-ghost-btn" type="button" data-action="add-address"><span class="ic" data-ic="plus"></span>Add new</button>
+      </div>
+    </div>
+
+    <div class="hub-label">Account information</div>
+    <div class="info-card">
+      <div class="info-row"><span>Member since</span><b data-bind="since"></b></div>
+      <div class="info-row"><span>Customer ID</span><b data-bind="custId"></b></div>
+      <div class="info-row"><span>Account status</span><b data-bind="status"></b></div>
+    </div>
+
+    <div class="hub-label">Shortcuts</div>
+    <div class="quick-grid three">
+      <button class="quick-card" type="button" data-goto="addresses"><span class="quick-ic"><span class="ic" data-ic="pin"></span></span><span class="quick-sub strong">Addresses</span></button>
+      <button class="quick-card" type="button" data-goto="orders"><span class="quick-ic"><span class="ic" data-ic="bag"></span></span><span class="quick-sub strong">Orders</span></button>
+      <button class="quick-card" type="button" data-goto="subscription"><span class="quick-ic"><span class="ic" data-ic="receipt"></span></span><span class="quick-sub strong">Plans</span></button>
+    </div>
+  </div>
+
+  <!-- WALLET (stored balance — separate from the "Wallet" payment option at checkout) -->
+  <div class="screen" id="screen-wallet">
+    <div class="screen-header-row"><button class="back-btn" type="button" data-back="account" aria-label="Back"><span class="ic" data-ic="back"></span></button><div class="section-title" style="margin:0;">My <span>Wallet</span></div></div>
+
+    <section class="wallet-card" aria-live="polite">
+      <div class="wallet-card-label">Available balance</div>
+      <div class="wallet-balance" id="walletBalance">₹0.00</div>
+      <div class="wallet-skeleton" id="walletSkeleton" style="display:none;"></div>
+      <div class="wallet-actions">
+        <button class="wallet-btn primary" type="button" id="walletAddMoneyBtn"><span class="ic" data-ic="plus"></span>Add Money</button>
+        <button class="wallet-btn" type="button" id="walletHistoryBtn"><span class="ic" data-ic="history"></span>Transactions</button>
+      </div>
+    </section>
+
+    <div class="notice" id="walletNotice" style="display:none;"></div>
+
+    <div class="section-head" style="margin-top:22px;" id="walletTxnHead"><div class="section-title">Wallet <span>Transactions</span></div></div>
+    <div id="walletTxnList"></div>
+    <div class="sub-empty" id="walletEmpty" style="display:none;">
+      <div class="sub-empty-ic"><span class="ic big" data-ic="wallet"></span></div>
+      <div class="sub-empty-title" id="walletEmptyTitle">Your wallet is empty</div>
+      <div class="sub-empty-sub" id="walletEmptySub">Add money to your wallet and use it for faster checkout.</div>
+      <button class="hub-primary-btn" type="button" id="walletEmptyAddBtn" style="margin-top:12px;"><span class="ic" data-ic="plus"></span>Add Money</button>
+    </div>
+    <div class="sub-empty" id="walletError" style="display:none;">
+      <div class="sub-empty-title">Unable to load wallet</div>
+      <div class="sub-empty-sub">Please check your connection and try again.</div>
+      <button class="hub-ghost-btn" type="button" id="walletRetryBtn" style="margin-top:10px;">Retry</button>
+    </div>
+
+    <div class="hub-label">Quick actions</div>
+    <div class="hub-group">
+      <button class="hub-row" type="button" data-goto="paymethods"><span class="hub-row-ic"><span class="ic" data-ic="card"></span></span><span class="hub-row-text"><b>Payment Methods</b><small>How you can pay at checkout</small></span><span class="ic chev" data-ic="chevron"></span></button>
+    </div>
+
+    <div class="info-card soft" id="walletInfo" style="margin-top:18px; display:none;">
+      <div class="info-note"><span class="ic" data-ic="info"></span>Your wallet balance can be used during checkout.</div>
+      <div class="info-note"><span class="ic" data-ic="info"></span>Wallet transactions are recorded in your account history.</div>
+    </div>
+  </div>
+
+  <!-- ADDRESSES -->
+  <div class="screen" id="screen-addresses">
+    <div class="screen-header-row"><button class="back-btn" type="button" data-back="account" aria-label="Back"><span class="ic" data-ic="back"></span></button><div class="section-title" style="margin:0;">Saved <span>Addresses</span></div></div>
+    <div id="addrScreenList" style="margin-top:14px;"></div>
+    <div class="sub-empty" id="addrScreenEmpty" style="display:none;">
+      <div class="sub-empty-ic"><span class="ic big" data-ic="pin"></span></div>
+      <div class="sub-empty-title">No saved addresses</div>
+      <div class="sub-empty-sub">Add a delivery address so we know where to bring your milk.</div>
+    </div>
+    <button class="hub-primary-btn wide" type="button" data-action="add-address"><span class="ic" data-ic="plus"></span>Add New Address</button>
+    <button class="hub-ghost-btn wide" type="button" id="addrUseLocationBtn"><span class="ic" data-ic="pin"></span>Use my current location</button>
+  </div>
+
+  <!-- SETTINGS -->
+  <div class="screen" id="screen-settings">
+    <div class="screen-header-row"><button class="back-btn" type="button" data-back="account" aria-label="Back"><span class="ic" data-ic="back"></span></button><div class="section-title" style="margin:0;"><span>Settings</span></div></div>
+
+    <div class="hub-label">Account</div>
+    <div class="hub-group">
+      <button class="hub-row" type="button" data-goto="profile"><span class="hub-row-ic"><span class="ic" data-ic="user"></span></span><span class="hub-row-text"><b>Profile</b></span><span class="ic chev" data-ic="chevron"></span></button>
+      <button class="hub-row" type="button" data-goto="addresses"><span class="hub-row-ic"><span class="ic" data-ic="pin"></span></span><span class="hub-row-text"><b>Addresses</b></span><span class="ic chev" data-ic="chevron"></span></button>
+      <button class="hub-row" type="button" data-goto="paymethods"><span class="hub-row-ic"><span class="ic" data-ic="card"></span></span><span class="hub-row-text"><b>Payment Methods</b></span><span class="ic chev" data-ic="chevron"></span></button>
+    </div>
+
+    <div class="hub-label">Preferences</div>
+    <div class="hub-group">
+      <button class="hub-row" type="button" data-goto="notifications"><span class="hub-row-ic"><span class="ic" data-ic="bell"></span></span><span class="hub-row-text"><b>Notifications</b></span><span class="ic chev" data-ic="chevron"></span></button>
+      <div class="hub-row static"><span class="hub-row-ic"><span class="ic" data-ic="globe"></span></span><span class="hub-row-text"><b>Language</b><small>English is the only language right now</small></span></div>
+      <button class="hub-row" type="button" data-action="open-location"><span class="hub-row-ic"><span class="ic" data-ic="pin"></span></span><span class="hub-row-text"><b>Location</b><small data-bind="locSub">Delivery location</small></span><span class="ic chev" data-ic="chevron"></span></button>
+    </div>
+
+    <div class="hub-label">Support</div>
+    <div class="hub-group">
+      <button class="hub-row" type="button" data-action="open-help"><span class="hub-row-ic"><span class="ic" data-ic="help"></span></span><span class="hub-row-text"><b>Help &amp; Support</b></span><span class="ic chev" data-ic="chevron"></span></button>
+      <a class="hub-row" id="settingsContactRow" href="mailto:support.pakkadoodhwala@gmail.com?subject=Help%20with%20my%20order"><span class="hub-row-ic"><span class="ic" data-ic="mail"></span></span><span class="hub-row-text"><b>Contact Us</b><small>support.pakkadoodhwala@gmail.com</small></span><span class="ic chev" data-ic="chevron"></span></a>
+    </div>
+
+    <div class="hub-label">Security</div>
+    <div class="hub-group">
+      <div class="hub-row static"><span class="hub-row-ic"><span class="ic" data-ic="lock"></span></span><span class="hub-row-text"><b>Login &amp; Security</b><small data-bind="signin">You sign in with a one-time code, so there is no password to manage.</small></span></div>
+    </div>
+    <button class="hub-logout" type="button" data-action="logout"><span class="ic" data-ic="logout"></span>Log out</button>
+  </div>
+
+  <!-- NOTIFICATIONS -->
+  <div class="screen" id="screen-notifications">
+    <div class="screen-header-row">
+      <button class="back-btn" type="button" data-back="home" aria-label="Back"><span class="ic" data-ic="back"></span></button>
+      <div class="section-title" style="margin:0; flex:1;">Notifi<span>cations</span> <span class="count-pill" id="notifUnreadPill" style="display:none;"></span></div>
+      <button class="hub-pill-btn" type="button" id="notifMarkAllBtn">Mark all read</button>
+    </div>
+    <div class="chip-row" id="notifChips" role="tablist" aria-label="Notification categories"></div>
+    <div id="notifScreenList"></div>
+    <div class="sub-empty" id="notifScreenEmpty" style="display:none;">
+      <div class="sub-empty-ic"><span class="ic big" data-ic="bell"></span></div>
+      <div class="sub-empty-title">You're all caught up</div>
+      <div class="sub-empty-sub">Order, delivery and offer updates will show up here.</div>
     </div>
   </div>
 
@@ -830,16 +1031,62 @@
   </div>
 
   <!-- EDIT PROFILE MODAL -->
-  <div class="loc-modal-backdrop" id="editProfileBackdrop">
-    <div class="loc-modal">
-      <h3>Edit profile</h3>
-      <p>Update your name and email. Your mobile number is used for login and can't be changed here.</p>
-      <input class="det-input" id="editProfileName" placeholder="Full name" style="margin-bottom:10px;">
-      <input class="det-input" id="editProfileEmail" type="email" placeholder="Email (optional)">
-      <button class="loc-btn" id="saveProfileBtn">
-        <span id="saveProfileBtnText">Save changes</span>
-      </button>
-      <button class="loc-cancel" id="editProfileCancelBtn">Cancel</button>
+  <div class="loc-modal-backdrop" id="editProfileBackdrop" role="dialog" aria-modal="true" aria-labelledby="editProfileTitle">
+    <div class="loc-modal sheet">
+      <h3 id="editProfileTitle">Edit profile</h3>
+      <div class="sheet-avatar"><div class="avatar avatar-lg" data-avatar aria-hidden="true"></div></div>
+      <label class="field-label" for="editProfileName">Full name</label>
+      <input class="det-input" id="editProfileName" autocomplete="name" maxlength="60" placeholder="Your full name">
+      <div class="field-error" id="editProfileNameErr" role="alert"></div>
+      <label class="field-label" for="editProfileEmail">Email <span class="opt">(optional)</span></label>
+      <input class="det-input" id="editProfileEmail" type="email" autocomplete="email" placeholder="you@example.com">
+      <div class="field-error" id="editProfileEmailErr" role="alert"></div>
+      <label class="field-label" for="editProfilePhone">Mobile number</label>
+      <input class="det-input" id="editProfilePhone" disabled aria-describedby="editProfilePhoneHint">
+      <div class="field-hint" id="editProfilePhoneHint">Mobile number is used for login and cannot be changed here.</div>
+      <div class="field-error form" id="editProfileFormErr" role="alert"></div>
+      <div class="sheet-actions">
+        <button class="loc-cancel" id="editProfileCancelBtn" type="button">Cancel</button>
+        <button class="loc-btn" id="saveProfileBtn" type="button"><span id="saveProfileBtnText">Save Changes</span></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ADD MONEY MODAL (wallet top-up) -->
+  <div class="loc-modal-backdrop" id="addMoneyBackdrop" role="dialog" aria-modal="true" aria-labelledby="addMoneyTitle">
+    <div class="loc-modal sheet">
+      <h3 id="addMoneyTitle">Add money</h3>
+      <div id="addMoneyStepPick">
+        <p>Choose an amount to add to your wallet.</p>
+        <div class="amount-grid" id="addMoneyChips" role="group" aria-label="Quick amounts"></div>
+        <label class="field-label" for="addMoneyInput">Or enter an amount</label>
+        <div class="amount-input"><span aria-hidden="true">₹</span><input id="addMoneyInput" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="Enter amount"></div>
+        <div class="field-error" id="addMoneyErr" role="alert"></div>
+        <div class="sheet-actions">
+          <button class="loc-cancel" id="addMoneyCancelBtn" type="button">Cancel</button>
+          <button class="loc-btn" id="addMoneyContinueBtn" type="button"><span id="addMoneyContinueText">Continue to Payment</span></button>
+        </div>
+      </div>
+      <div id="addMoneyStepResult" style="display:none;">
+        <div class="notice warn" id="addMoneyResultMsg"></div>
+        <button class="loc-btn" id="addMoneyDoneBtn" type="button" style="margin-top:14px;">Got it</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- EDIT ADDRESS MODAL (label + text; saved on this device) -->
+  <div class="loc-modal-backdrop" id="editAddrBackdrop" role="dialog" aria-modal="true" aria-labelledby="editAddrTitle">
+    <div class="loc-modal sheet">
+      <h3 id="editAddrTitle">Edit address</h3>
+      <label class="field-label" for="editAddrLabel">Label</label>
+      <input class="det-input" id="editAddrLabel" maxlength="30" placeholder="Home, Work, Other">
+      <label class="field-label" for="editAddrFull">Address</label>
+      <textarea class="det-input" id="editAddrFull" rows="3" placeholder="Street, area, landmark"></textarea>
+      <div class="field-error form" id="editAddrErr" role="alert"></div>
+      <div class="sheet-actions">
+        <button class="loc-cancel" id="editAddrCancelBtn" type="button">Cancel</button>
+        <button class="loc-btn" id="editAddrSaveBtn" type="button">Save Changes</button>
+      </div>
     </div>
   </div>
 
@@ -858,6 +1105,7 @@
 </div>
 
 <script src="script.js"></script>
+<script src="js/account-hub.js"></script>
 <script type="module" src="js/app-init.js"></script>
 </body>
 </html>
