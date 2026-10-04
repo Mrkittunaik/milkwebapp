@@ -227,6 +227,18 @@ export const paymentsApi = {
     api.post('/api/payments/verify', { razorpay_order_id, razorpay_payment_id, razorpay_signature })
 };
 
+/* ---------------- Wallet ----------------
+   INTEGRATION POINT: the backend has no wallet routes yet, so nothing calls
+   these. js/account-hub.js's walletService switches to them once its
+   BACKEND_READY flag is set to true. Paths are proposals - adjust to the API
+   you build. Top-ups must be priced and confirmed server-side, like
+   paymentsApi.createOrder (never trust a client-sent balance). */
+export const walletApi = {
+  get: () => api.get('/api/wallet'),                              // -> { balance, currency }
+  transactions: () => api.get('/api/wallet/transactions'),        // -> [{ id, type:'credit'|'debit', amount, title, status, createdAt, ref }]
+  createTopUp: (amount) => api.post('/api/wallet/top-up', { amount }) // -> same shape as paymentsApi.createOrder
+};
+
 /* ---------------- Delivery boy (self) ---------------- */
 export const deliveryApi = {
   me: () => api.get('/api/delivery-boys/me'),
