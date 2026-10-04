@@ -11,6 +11,13 @@
 import { productsApi, API_BASE } from './api.js';
 import { onSocket } from './socket.js';
 
+
+// Escapes text before it is placed into an innerHTML template, so catalog
+// data (names, descriptions, titles) can never inject markup or script.
+const esc = (v) => String(v == null ? '' : v)
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
 const CACHE_KEY = 'pd_cache_products';
 
 let allProducts = [];      // last fetched list, kept fresh by socket events
@@ -67,13 +74,13 @@ function addBtnHtml(p, outOfStock) {
 
   if (qty > 0) {
     return `
-      <div class="prod-stepper" data-id="${p._id}" data-name="${p.name}" data-price="${p.price}">
+      <div class="prod-stepper" data-id="${p._id}" data-name="${esc(p.name)}" data-price="${p.price}">
         <button class="prod-step-btn" data-step="dec" aria-label="Remove one">&minus;</button>
         <span class="prod-step-qty">${qty}</span>
         <button class="prod-step-btn" data-step="inc" aria-label="Add one" ${outOfStock ? 'disabled' : ''}>+</button>
       </div>`;
   }
-  return `<button class="prod-add" data-id="${p._id}" data-name="${p.name}" data-price="${p.price}" ${outOfStock ? 'disabled' : ''}>+</button>`;
+  return `<button class="prod-add" data-id="${p._id}" data-name="${esc(p.name)}" data-price="${p.price}" ${outOfStock ? 'disabled' : ''}>+</button>`;
 }
 
 // Shows the "Added ✓" state for a product for a moment, then re-renders
@@ -107,12 +114,12 @@ function buildThumbHtml(p, sizePx) {
   if (urls.length === 0) return CATEGORY_ICONS[p.category] || CATEGORY_ICONS.milk;
 
   if (urls.length === 1) {
-    return `<img src="${urls[0]}" alt="${p.name}" loading="lazy" style="width:100%;height:100%;object-fit:cover;border-radius:inherit;" onerror="this.outerHTML='${fallback}'">`;
+    return `<img src="${esc(urls[0])}" alt="${esc(p.name)}" loading="lazy" style="width:100%;height:100%;object-fit:cover;border-radius:inherit;" onerror="this.outerHTML='${fallback}'">`;
   }
 
   const cid = `car-${++carouselSeq}`;
   const slides = urls.map((u, i) =>
-    `<div class="prod-car-slide"><img src="${u}" alt="${p.name}" loading="${i === 0 ? 'eager' : 'lazy'}" onerror="this.parentElement.style.display='none'"></div>`
+    `<div class="prod-car-slide"><img src="${esc(u)}" alt="${esc(p.name)}" loading="${i === 0 ? 'eager' : 'lazy'}" onerror="this.parentElement.style.display='none'"></div>`
   ).join('');
   const dots = urls.map((_, i) => `<span class="prod-car-dot${i === 0 ? ' active' : ''}"></span>`).join('');
 
@@ -172,7 +179,7 @@ function productCardHtml(p) {
   const outOfStock = !p.available || p.stock <= 0;
 
   return `
-    <div class="prod-card grid${outOfStock ? ' out-of-stock' : ''}" data-cat="${p.category}" data-id="${p._id}">
+    <div class="prod-card grid${outOfStock ? ' out-of-stock' : ''}" data-cat="${esc(p.category)}" data-id="${p._id}">
       <div class="prod-thumb">
         ${discountPct > 0 ? `<span class="disc">-${discountPct}%</span>` : ''}
         <span class="fav">${FAV_ICON}</span>
@@ -180,8 +187,8 @@ function productCardHtml(p) {
         ${outOfStock ? '<span class="oos-badge">Out of stock</span>' : ''}
       </div>
       <div class="prod-body">
-        <div class="prod-name">${p.name}</div>
-        <div class="prod-meta">${p.unit}${p.desc ? ' &middot; ' + p.desc : ''}</div>
+        <div class="prod-name">${esc(p.name)}</div>
+        <div class="prod-meta">${esc(p.unit)}${p.desc ? ' &middot; ' + esc(p.desc) : ''}</div>
         <div class="prod-bottom">
           <div class="prod-price">${discountPct > 0 ? `<s>₹${p.mrp}</s>` : ''}₹${p.price}</div>
           ${addBtnHtml(p, outOfStock)}
@@ -202,8 +209,8 @@ function productRailCardHtml(p) {
         ${thumb}
       </div>
       <div class="prod-body">
-        <div class="prod-name">${p.name}</div>
-        <div class="prod-meta">${p.unit}${p.desc ? ' &middot; ' + p.desc : ''}</div>
+        <div class="prod-name">${esc(p.name)}</div>
+        <div class="prod-meta">${esc(p.unit)}${p.desc ? ' &middot; ' + esc(p.desc) : ''}</div>
         <div class="prod-bottom">
           <div class="prod-price">${discountPct > 0 ? `<s>₹${p.mrp}</s>` : ''}₹${p.price}</div>
           ${addBtnHtml(p, !p.available || p.stock <= 0)}
@@ -305,7 +312,11 @@ async function loadProducts() {
     // out with an error, unless there's truly nothing to show at all.
     if (!allProducts.length) {
       const grid = document.getElementById('prodGrid');
-      if (grid) grid.innerHTML = `<div class="prod-empty">Couldn't load products. Pull to refresh or check your connection.</div>`;
+      if (grid) {
+        grid.innerHTML = `<div class="prod-empty">Something went wrong.<br>Please try again.<br><button type="button" class="prod-retry-btn" style="margin-top:10px;padding:8px 18px;border:0;border-radius:10px;background:var(--yellow,#FDC202);font-weight:700;cursor:pointer;">Retry</button></div>`;
+        const retry = grid.querySelector('.prod-retry-btn');
+        if (retry) retry.addEventListener('click', () => { grid.innerHTML = `<div class="prod-empty">Loading…</div>`; loadProducts(); });
+      }
     }
   }
 }
