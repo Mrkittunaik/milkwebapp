@@ -7,8 +7,43 @@
    flowing immediately after login.
 ========================================================= */
 
-import { authApi, setToken, usersApi } from './api.js';
+import { authApi, setToken, getToken, getTokenUserId, isLoggedIn, usersApi } from './api.js';
 import { connectSocket, disconnectSocket } from './socket.js';
+
+/* ---------------- User-scoped browser storage ----------------
+   Every key that holds data belonging to one customer. All of these are
+   wiped on logout AND whenever a different account logs in, so User B can
+   never see User A's name, addresses, payments or cached orders. */
+const USER_DATA_KEYS = [
+  'pd_user_session',          // cached name/email/phone shown in the UI
+  'pd_saved_addresses',       // saved delivery addresses
+  'pd_selected_address_id',
+  'pd_pending_payment',       // in-flight payment attempt
+  'pd_payment_history',       // locally cached payment records
+  'pd_unplaced_payment',      // verified payment awaiting order confirmation
+  'pd_flash'
+];
+const LAST_UID_KEY = 'pd_last_uid'; // which account the cached data above belongs to
+
+export function clearUserData() {
+  USER_DATA_KEYS.forEach(k => { try { localStorage.removeItem(k); } catch (e) { /* ignore */ } });
+  try {
+    Object.keys(sessionStorage).filter(k => k.startsWith('pd_')).forEach(k => sessionStorage.removeItem(k));
+  } catch (e) { /* ignore */ }
+  try { localStorage.removeItem(LAST_UID_KEY); } catch (e) { /* ignore */ }
+}
+
+// Call right after a token is stored. If the account is different from the
+// one the cached data was written for, drop that data first.
+export function bindStorageToCurrentUser() {
+  const uid = getTokenUserId();
+  if (!uid) return;
+  let last = null;
+  try { last = localStorage.getItem(LAST_UID_KEY); } catch (e) { /* ignore */ }
+  if (last && last !== String(uid)) clearUserData();
+  try { localStorage.setItem(LAST_UID_KEY, String(uid)); } catch (e) { /* ignore */ }
+}
+
 
 
 
@@ -19,6 +54,7 @@ export async function sendOtp(phone) {
 export async function verifyOtp(phone, code) {
   const res = await authApi.verifyOtp(phone, code); // { ok, token, user }
   setToken(res.token);
+  bindStorageToCurrentUser();
   await connectSocket();
   return res.user;
 }
@@ -51,7 +87,10 @@ export function initGoogleSignIn(onCredential) {
   window.google.accounts.id.initialize({
     client_id: window.PD_GOOGLE_CLIENT_ID,
     callback: (response) => onCredential(response.credential),
-    ux_mode: 'popup' // browsers/webviews that can't do a popup fall back to a full-page redirect automatically
+    ux_mode: 'popup', // browsers/webviews that can't do a popup fall back to a full-page redirect automatically
+    auto_select: false,          // never silently re-pick the previous account
+    cancel_on_tap_outside: true,
+    itp_support: true
   });
   window.google.accounts.id.renderButton(container, {
     type: 'standard', theme: 'outline', size: 'large', width: 320, text: 'continue_with'
@@ -68,6 +107,7 @@ export async function completeGoogleLogin(credential) {
   const res = await authApi.google(credential); // { ok, token, user, needsPhone }
   setToken(res.token); // token is issued even when needsPhone is true, so
                         // bindPhone below can call the API as this user.
+  bindStorageToCurrentUser();
   if (!res.needsPhone) await connectSocket();
   return res; // caller checks res.needsPhone to decide whether to show the bind-phone step
 }
@@ -94,10 +134,48 @@ export async function fetchMyProfile() {
 //      next time instead of Google silently re-picking the same account
 export function logout() {
   try{ setToken(null); } catch(e){ console.warn('[auth] logout: clearing token failed', e); }
+  try{ clearUserData(); } catch(e){ console.warn('[auth] logout: clearing user data failed', e); }
   try{ disconnectSocket(); } catch(e){ console.warn('[auth] logout: disconnecting socket failed', e); }
   try{
     if (window.google && window.google.accounts && window.google.accounts.id) {
       window.google.accounts.id.disableAutoSelect();
     }
   } catch(e){ console.warn('[auth] logout: Google disableAutoSelect failed', e); }
+}
+
+// Confirms with the backend that the stored token is still valid and
+// returns the authoritative user. Resolves null when there is no valid
+// session (missing/expired/rejected token) - never throws for auth
+// problems, so callers can simply fall back to the logged-out UI.
+// A network failure resolves { offline: true } so a flaky connection does
+// not log the customer out.
+export async function verifySession() {
+  if (!isLoggedIn()) return null;
+  try {
+    const user = await usersApi.me();
+    bindStorageToCurrentUser();
+    return user || null;
+  } catch (e) {
+    if (e && e.status === 0) return { offline: true };
+    return null; // 401/403/anything else: no valid session (api.js already cleared a rejected token)
+  }
+}
+
+// Cross-tab sync: the token lives in localStorage, so a login/logout in one
+// tab fires a 'storage' event in every other tab. Any change in identity
+// reloads the tab into a clean state (guest UI, or the new user's data).
+export function initCrossTabSync() {
+  // 'storage' events only fire in OTHER tabs, and only when the value really
+  // changed - so any event for the token key means another tab logged in,
+  // logged out or switched account.
+  window.addEventListener('storage', (e) => {
+    if (e.key !== 'pd_auth_token' && e.key !== null) return; // null = storage cleared
+    window.location.reload();
+  });
+  // Back/forward cache: a page restored from bfcache after logout (browser
+  // Back button) must re-check auth instead of showing stale private data.
+  let tokenAtLoad = getToken();
+  window.addEventListener('pageshow', (e) => {
+    if (e.persisted && getToken() !== tokenAtLoad) window.location.reload();
+  });
 }
