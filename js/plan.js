@@ -18,6 +18,13 @@
 import { plansApi, API_BASE } from './api.js';
 import { onSocket } from './socket.js';
 
+
+// Escapes text before it is placed into an innerHTML template, so catalog
+// data (names, descriptions, titles) can never inject markup or script.
+const esc = (v) => String(v == null ? '' : v)
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
 const CACHE_KEY = 'pd_cache_plans';
 
 let allPlans = [];
@@ -86,7 +93,7 @@ const DEMO_PLANS = [
 function thumbHtml(p) {
   const url = resolveImageUrl(p.image);
   if (url) {
-    return `<img src="${url}" alt="${p.name}" loading="lazy" onerror="this.outerHTML='<div class=&quot;pkg-thumb-fallback&quot;>${DROP_ICON.replace(/"/g, '&quot;')}</div>'">`;
+    return `<img src="${esc(url)}" alt="${esc(p.name)}" loading="lazy" onerror="this.outerHTML='<div class=&quot;pkg-thumb-fallback&quot;>${DROP_ICON.replace(/"/g, '&quot;')}</div>'">`;
   }
   // No image set yet (admin hasn't uploaded one) - graceful fallback, never a broken image icon.
   return `<div class="pkg-thumb-fallback">${DROP_ICON}</div>`;
@@ -104,7 +111,7 @@ function planBtnHtml(p) {
     // ("Subscribe") again once fully removed from the cart (qty 0).
     return `<button class="pkg-btn pkg-btn-subscribed" disabled data-id="${p._id}">${CHECK_ICON} Subscribed</button>`;
   }
-  return `<button class="pkg-btn" data-id="${p._id}" data-name="${p.name}" data-price="${p.price}">Subscribe</button>`;
+  return `<button class="pkg-btn" data-id="${p._id}" data-name="${esc(p.name)}" data-price="${p.price}">Subscribe</button>`;
 }
 
 function planCardHtml(p) {
@@ -117,8 +124,8 @@ function planCardHtml(p) {
         <span class="pkg-drop">${DROP_ICON}</span>
       </div>
       <div class="pkg-body">
-        <div class="pkg-name">${p.name}</div>
-        <div class="pkg-desc">${p.desc || ''}</div>
+        <div class="pkg-name">${esc(p.name)}</div>
+        <div class="pkg-desc">${esc(p.desc)}</div>
         <div class="pkg-price">₹${p.price}${period}</div>
         ${planBtnHtml(p)}
       </div>
