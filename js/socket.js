@@ -25,40 +25,64 @@ function loadSocketIoScript() {
   });
 }
 
+let socketToken = null;       // token the current socket was opened with
+let connecting = null;        // in-flight connect promise (prevents double sockets)
+
 export async function connectSocket() {
-  if (socket && socket.connected) return socket;
+  const token = getToken() || null;
 
-  await loadSocketIoScript();
+  // Reuse the existing socket only if it belongs to the same identity.
+  // A different token (login / logout / account switch) must never keep
+  // receiving the previous user's personal room events.
+  if (socket && socketToken === token) return socket;
+  if (socket && socketToken !== token) disconnectSocket();
+  if (connecting) return connecting;
 
-  // Logged-in users authenticate to get their personal rooms (orders,
-  // notifications). Guests connect with no token at all - the backend
-  // still puts every connection (auth or not) into the public 'catalog'
-  // room, so live product/price/banner updates work whether or not
-  // the visitor is logged in.
-  const token = getToken();
-  socket = window.io(API_BASE, token ? { auth: { token } } : {});
+  connecting = (async () => {
+    await loadSocketIoScript();
 
-  socket.on('connect_error', (err) => {
-    console.warn('[socket] connect error:', err.message);
-  });
+    // Logged-in users authenticate to get their personal rooms (orders,
+    // notifications). Guests connect with no token at all - the backend
+    // still puts every connection into the public 'catalog' room.
+    socketToken = token;
+    socket = window.io(API_BASE, token ? { auth: { token } } : {});
 
-  // Re-attach any listeners that were registered before the socket existed.
-  pendingHandlers.forEach(({ event, cb }) => socket.on(event, cb));
+    socket.on('connect_error', (err) => {
+      console.warn('[socket] connect error:', err && err.message);
+    });
 
-  return socket;
+    // Attach each registered listener exactly once on this socket.
+    pendingHandlers.forEach(({ event, cb }) => {
+      socket.off(event, cb);
+      socket.on(event, cb);
+    });
+    return socket;
+  })();
+
+  try { return await connecting; }
+  finally { connecting = null; }
 }
 
 export function disconnectSocket() {
   if (socket) {
-    socket.disconnect();
+    try { socket.removeAllListeners(); } catch (e) { /* ignore */ }
+    try { socket.disconnect(); } catch (e) { /* ignore */ }
     socket = null;
+    socketToken = null;
   }
+}
+
+// Drops every registered listener (used on logout so the previous user's
+// handlers - bound to their user id - can never fire for the next user).
+export function clearSocketHandlers() {
+  pendingHandlers.length = 0;
 }
 
 // Register a listener even if the socket isn't connected yet (e.g. called
 // during page setup, before login). It attaches immediately if possible,
 // and gets replayed onto the socket once connectSocket() runs.
 export function onSocket(event, cb) {
+  if (pendingHandlers.some(h => h.event === event && h.cb === cb)) return; // no duplicate registration
   pendingHandlers.push({ event, cb });
   if (socket) socket.on(event, cb);
 }
