@@ -28,6 +28,13 @@
 import { bannersApi, API_BASE } from './api.js';
 import { onSocket } from './socket.js';
 
+
+// Escapes text before it is placed into an innerHTML template, so catalog
+// data (names, descriptions, titles) can never inject markup or script.
+const esc = (v) => String(v == null ? '' : v)
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
 const CACHE_KEY = 'pd_cache_banners';
 
 let banners = [];
@@ -86,11 +93,11 @@ function bannerCardHtml(b, i) {
     // without touching any other card or re-fetching anything.
     return `
       <div class="promo-card promo-img" data-i="${i}" style="background:${bg};">
-        <img src="${img}" alt="${b.title || 'Offer'}" loading="${i === 0 ? 'eager' : 'lazy'}"
+        <img src="${esc(img)}" alt="${esc(b.title || 'Offer')}" loading="${i === 0 ? 'eager' : 'lazy'}"
              onerror="this.closest('.promo-card').classList.add('promo-fallback'); this.remove();">
         <div class="promo-copy promo-copy-fallback">
-          <div class="promo-title">${b.title || ''}</div>
-          ${b.subtitle ? `<div class="promo-sub">${b.subtitle}</div>` : ''}
+          <div class="promo-title">${esc(b.title)}</div>
+          ${b.subtitle ? `<div class="promo-sub">${esc(b.subtitle)}</div>` : ''}
         </div>
       </div>`;
   }
@@ -100,8 +107,8 @@ function bannerCardHtml(b, i) {
     <div class="promo-card promo-fallback" data-i="${i}" style="background:${bg};">
       <div class="promo-blob"></div><div class="promo-blob2"></div>
       <div class="promo-copy">
-        <div class="promo-title">${b.title || ''}</div>
-        ${b.subtitle ? `<div class="promo-sub">${b.subtitle}</div>` : ''}
+        <div class="promo-title">${esc(b.title)}</div>
+        ${b.subtitle ? `<div class="promo-sub">${esc(b.subtitle)}</div>` : ''}
       </div>
     </div>`;
 }
