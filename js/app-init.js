@@ -19,7 +19,7 @@ import { initBanners } from './banners.js';
 import { initLiveLocation } from './live-location.js';
 import { initNotifications, requestPushPermission } from './notifications.js';
 import { placeRealOrder, startTrackingOrder, stopTrackingOrder, onMyOrdersChanged, fetchMyOrders } from './orders.js';
-import { sendOtp, verifyOtp, completeGoogleLogin, bindPhone, initGoogleSignIn, logout } from './auth.js';
+import { sendOtp, verifyOtp, completeGoogleLogin, bindPhone, initGoogleSignIn, logout, verifySession, clearUserData, initCrossTabSync, fetchMyProfile } from './auth.js';
 
 // ---- Products: fetch real catalog, wire "+" buttons into the EXISTING
 // cart object that script.js already maintains (window.cart), so cart
@@ -77,8 +77,16 @@ window.PD_REAL_AUTH = {
   bindPhone,
   initGoogleSignIn,
   logout,
-  getTokenUserId
+  getTokenUserId,
+  isLoggedIn,
+  verifySession,
+  clearUserData,
+  fetchMyProfile,
+  startUserRealtime: () => startUserRealtime()
 };
+
+// Other tabs logging in/out/switching reload this tab into a clean state.
+initCrossTabSync();
 
 // ---- Orders: expose real order placement + tracking ----
 window.PD_REAL_ORDERS = {
@@ -97,15 +105,18 @@ window.PD_PAYMENTS = {
   verify: paymentsApi.verify
 };
 
-// ---- Connect the realtime channel for EVERYONE, guest or logged in, so
-// live product/price/banner updates (catalog:changed) reach every visitor
-// immediately - not just people who are signed in. Login-only features
-// (notifications, "my orders" live refresh) are wired separately below. ----
-(async function boot() {
-  await connectSocket();
-
+// ---- Per-user realtime wiring (notifications bell, live "My Orders").
+// Idempotent per account: calling it again for the same user is a no-op, so
+// listeners are never registered twice. A different account always arrives
+// via a full page reload (logout reloads), which resets all of this. ----
+let realtimeStartedFor = null;
+async function startUserRealtime() {
   if (!isLoggedIn()) return;
   const myUserId = getTokenUserId();
+  if (!myUserId || realtimeStartedFor === myUserId) return;
+  realtimeStartedFor = myUserId;
+
+  await connectSocket(); // re-opens the socket with THIS user's token if needed
 
   initNotifications({
     myUserId,
@@ -119,23 +130,27 @@ window.PD_PAYMENTS = {
       }
     },
     onListUpdate: (list) => {
-      // Reuses script.js's existing renderNotifList() rendering if present,
-      // by exposing the live list on window for it to read.
       window.__liveNotifications = list;
       if (typeof window.renderNotifList === 'function') window.renderNotifList();
     }
   });
 
-  // Ask for browser push permission once, quietly (no blocking prompt on load
-  // for guests - only for logged-in users, and only if not already answered).
+  // Ask for browser push permission once, quietly (only for logged-in users).
   requestPushPermission();
 
-  // Keep "My Orders" screen fresh without the user pulling to refresh, and
-  // without waiting on a fresh network fetch - apply the pushed order
-  // straight into the in-memory list so the status/rider change reflects
-  // instantly (no reload, no refetch round-trip).
+  // Keep "My Orders" fresh: apply the pushed order straight into the
+  // in-memory list (no refetch round-trip).
   onMyOrdersChanged((order) => {
     if (typeof window.applyLiveOrderUpdate === 'function') window.applyLiveOrderUpdate(order);
     else if (typeof window.renderOrderHistory === 'function') window.renderOrderHistory();
   });
+}
+
+// ---- Connect the realtime channel for EVERYONE, guest or logged in, so
+// live product/price/banner updates (catalog:changed) reach every visitor
+// immediately. Login-only features start via startUserRealtime(), which
+// script.js also calls right after a successful login. ----
+(async function boot() {
+  await connectSocket();
+  if (isLoggedIn()) startUserRealtime();
 })();
