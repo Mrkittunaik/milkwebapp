@@ -114,7 +114,9 @@
   // Screens that show or act on personal data. A guest (or an expired session)
   // is sent to the login gate and returned here after signing in. The backend
   // still authorizes every request independently - this is only the UI layer.
-  const PROTECTED_SCREENS = ['account', 'details', 'payment', 'paymethods', 'track'];
+  const PROTECTED_SCREENS = ['account', 'details', 'payment', 'paymethods', 'track', 'profile', 'wallet', 'addresses', 'settings'];
+  // Sub-screens reached from Account keep the Account tab highlighted.
+  const ACCOUNT_CHILD_SCREENS = ['profile', 'wallet', 'addresses', 'settings', 'paymethods', 'subscription'];
 
   function goToScreen(name){
     if(PROTECTED_SCREENS.indexOf(name) !== -1 && !userSession.loggedIn){
@@ -126,10 +128,12 @@
     const target = document.getElementById('screen-' + name);
     if(target) target.classList.add('active');
     document.querySelectorAll('.nav-item[data-screen]').forEach(n=>{
-      n.classList.toggle('active', n.dataset.screen === name);
+      n.classList.toggle('active', n.dataset.screen === name || (n.dataset.screen === 'account' && ACCOUNT_CHILD_SCREENS.indexOf(name) !== -1));
     });
     const scr = document.querySelector('.screen.active');
     if(scr) scr.scrollTop = 0;
+    // js/account-hub.js listens for this to render the screen being opened.
+    try{ window.dispatchEvent(new CustomEvent('pd:screen', { detail: { name: name } })); }catch(e){}
     // Stop watching the customer's own GPS and leave the order's socket
     // room once they leave the live tracking screen — no need to keep
     // polling location or receiving driver pings in the background.
@@ -575,6 +579,7 @@
      WISHLIST
   ========================================================= */
   const wishlist = {}; // name -> {name, price, cat, icon}
+  window.PD_WISHLIST = wishlist; // read-only use by js/account-hub.js
 
   function findProdCard(favEl){
     return favEl.closest('.prod-card');
@@ -585,6 +590,7 @@
     const count = Object.keys(wishlist).length;
     if(count > 0){ badge.style.display='flex'; badge.textContent = count; }
     else { badge.style.display='none'; }
+    if(window.PD_HUB) window.PD_HUB.refresh();
   }
 
   function renderWishlistScreen(){
@@ -1090,37 +1096,47 @@
     if(!userSession.loggedIn) return; // guests have nothing to edit yet - Login button handles that case
     editProfileName.value = userSession.name || '';
     editProfileEmail.value = userSession.email || '';
+    if(window.PD_HUB) window.PD_HUB.prepareProfileModal();
     editProfileBackdrop.classList.add('show');
+    setTimeout(()=> editProfileName.focus(), 60);
   }
   function closeEditProfile(){
     editProfileBackdrop.classList.remove('show');
   }
-  if(accountLoggedInView) accountLoggedInView.addEventListener('click', openEditProfile);
+  window.openEditProfile = openEditProfile; // Account/Profile screens open the modal via js/account-hub.js
   if(editProfileCancelBtn) editProfileCancelBtn.addEventListener('click', closeEditProfile);
   if(editProfileBackdrop) editProfileBackdrop.addEventListener('click', (e)=>{
     if(e.target === editProfileBackdrop) closeEditProfile();
   });
   if(saveProfileBtn) saveProfileBtn.addEventListener('click', async ()=>{
+    const hub = window.PD_HUB;
     const name = editProfileName.value.trim();
-    if(!name){
-      showToast('Please enter your name');
+    const email = editProfileEmail.value.trim();
+    // Inline validation (no toast spam): errors sit under the field they belong to.
+    const nameErr = name ? '' : 'Please enter your name';
+    const emailErr = (email && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) ? 'Enter a valid email address' : '';
+    if(hub) hub.setProfileErrors({ name: nameErr, email: emailErr, form: '' });
+    if(nameErr || emailErr){
+      (nameErr ? editProfileName : editProfileEmail).focus();
       return;
     }
-    const email = editProfileEmail.value.trim();
     saveProfileBtn.disabled = true;
     saveProfileBtnText.textContent = 'Saving...';
     try{
       await window.PD_USER.updateMe({ name, email });
       userSession.name = name;
       userSession.email = email;
-      renderAccountScreen();
+      saveSession();
+      renderAccountScreen(); // repaints Account, Profile and avatars in place - no page reload
       closeEditProfile();
-      showToast('Profile updated');
+      showToast('Profile saved successfully');
     } catch(err){
-      showToast(err.message || 'Could not update profile, please try again');
+      const msg = err.message || 'Could not update profile, please try again';
+      if(hub) hub.setProfileErrors({ name: '', email: '', form: msg });
+      else showToast(msg);
     } finally {
       saveProfileBtn.disabled = false;
-      saveProfileBtnText.textContent = 'Save changes';
+      saveProfileBtnText.textContent = 'Save Changes';
     }
   });
 
@@ -1131,8 +1147,7 @@
     const safe = escapeHtml(String(text).replace(/&middot;/g, '\u00b7')).replace(/\u00b7/g, '&middot;');
     addrLabel.innerHTML = safe;
     if(payAddr) payAddr.innerHTML = safe;
-    const settingsAddr = document.querySelector('.settings-row-label');
-    if(settingsAddr) settingsAddr.textContent = String(text).replace(/&middot;/g, '\u00b7').replace(/<[^>]+>/g,'');
+    if(window.PD_HUB) window.PD_HUB.refresh(); // addresses/profile/settings read the selected address
   }
 
   // Compass direction from the delivery pin to a nearby reference point
@@ -1338,6 +1353,47 @@
     }
   })();
 
+  // Shared by the checkout address list and the Account > Addresses screen so the
+  // select/remove rules live in exactly one place.
+  function selectSavedAddress(id){
+    const addr = savedAddresses.find(a => a.id === id);
+    if(!addr) return;
+    orderDetails.addressId = addr.id;
+    persistSelectedAddress(addr.id);
+    setDeliveryAddress(`${addr.label} &middot; ${addr.full}`);
+    renderSavedAddrList();
+    updateAfterAddrVisibility();
+    if(window.PD_HUB) window.PD_HUB.refresh();
+  }
+  function removeSavedAddress(id){
+    // An address only ever disappears when the user explicitly removes it.
+    const idx = savedAddresses.findIndex(a => a.id === id);
+    if(idx < 0) return;
+    savedAddresses.splice(idx, 1);
+    persistSavedAddresses();
+    if(orderDetails.addressId === id){
+      orderDetails.addressId = savedAddresses.length ? savedAddresses[0].id : null;
+      persistSelectedAddress(orderDetails.addressId);
+      if(savedAddresses.length){
+        setDeliveryAddress(`${savedAddresses[0].label} &middot; ${savedAddresses[0].full}`);
+      }
+    }
+    renderSavedAddrList();
+    updateAfterAddrVisibility();
+    showToast('Address removed');
+    if(window.PD_HUB) window.PD_HUB.refresh();
+  }
+  function updateSavedAddress(id, label, full){
+    const addr = savedAddresses.find(a => a.id === id);
+    if(!addr) return false;
+    addr.label = label; addr.full = full;
+    persistSavedAddresses();
+    if(orderDetails.addressId === id) setDeliveryAddress(`${label} &middot; ${full}`);
+    renderSavedAddrList();
+    return true;
+  }
+  window.PD_ADDR = { list: ()=> savedAddresses, selectedId: ()=> orderDetails.addressId, select: selectSavedAddress, remove: removeSavedAddress, update: updateSavedAddress };
+
   function renderSavedAddrList(){
     const list = document.getElementById('savedAddrList');
     if(!list) return;
@@ -1359,28 +1415,11 @@
       `;
       card.addEventListener('click', (e)=>{
         if(e.target.closest('.det-addr-delete')) return; // handled separately below
-        orderDetails.addressId = addr.id;
-        persistSelectedAddress(addr.id);
-        setDeliveryAddress(`${addr.label} &middot; ${addr.full}`);
-        renderSavedAddrList();
-        updateAfterAddrVisibility();
+        selectSavedAddress(addr.id);
       });
       card.querySelector('.det-addr-delete').addEventListener('click', (e)=>{
         e.stopPropagation();
-        // Address only ever disappears when the user explicitly removes it here.
-        const idx = savedAddresses.findIndex(a => a.id === addr.id);
-        if(idx > -1) savedAddresses.splice(idx, 1);
-        persistSavedAddresses();
-        if(orderDetails.addressId === addr.id){
-          orderDetails.addressId = savedAddresses.length ? savedAddresses[0].id : null;
-          persistSelectedAddress(orderDetails.addressId);
-          if(savedAddresses.length){
-            setDeliveryAddress(`${savedAddresses[0].label} &middot; ${savedAddresses[0].full}`);
-          }
-        }
-        renderSavedAddrList();
-        updateAfterAddrVisibility();
-        showToast('Address removed');
+        removeSavedAddress(addr.id);
       });
       list.appendChild(card);
     });
@@ -1514,6 +1553,7 @@
     renderSavedAddrList();
     updateAfterAddrVisibility();
     showToast('Address saved — it\u2019ll stay set until you remove it');
+    if(window.PD_HUB) window.PD_HUB.onAddressSaved();
   });
 
   // "Share live location" inside the details form -> captures exact GPS
@@ -2015,23 +2055,11 @@
   function renderAccountScreen(){
     const loggedInView = document.getElementById('accountLoggedInView');
     const guestView = document.getElementById('accountGuestView');
-    const settingsGroup = document.getElementById('accountSettingsGroup');
     if(!loggedInView) return;
-    if(userSession.loggedIn){
-      loggedInView.style.display = 'flex';
-      guestView.style.display = 'none';
-      settingsGroup.style.display = 'block';
-      const accName = document.querySelector('.account-name');
-      const accPhone = document.querySelector('.account-phone');
-      const accAvatar = document.querySelector('.account-avatar');
-      if(accName) accName.textContent = userSession.name || 'Pakka Doodhwala User';
-      if(accPhone && userSession.phone) accPhone.textContent = '+91 ' + userSession.phone.slice(0,2) + 'xxxxxx' + userSession.phone.slice(-2);
-      if(accAvatar) accAvatar.textContent = (userSession.name || 'U').charAt(0);
-    } else {
-      loggedInView.style.display = 'none';
-      guestView.style.display = 'block';
-      settingsGroup.style.display = 'none';
-    }
+    loggedInView.style.display = userSession.loggedIn ? 'block' : 'none';
+    guestView.style.display = userSession.loggedIn ? 'none' : 'block';
+    // Name/phone/email/avatar/counts are painted by js/account-hub.js.
+    if(window.PD_HUB) window.PD_HUB.refresh();
   }
 
   const loginGateBack = document.getElementById('loginGateBack');
@@ -2398,19 +2426,18 @@
   }
 
   function renderNotifBadge(){
+    // Unread-aware badge lives in js/account-hub.js; fall back to total count.
+    if(window.PD_HUB){ window.PD_HUB.syncBadge(); return; }
     const count = notifications.length;
     const dot = document.getElementById('subBellDot');
     if(dot) dot.classList.toggle('show', count > 0);
     const topBadge = document.getElementById('topNotifBadge');
     if(topBadge){
-      if(count > 0){
-        topBadge.textContent = count > 9 ? '9+' : String(count);
-        topBadge.style.display = 'flex';
-      } else {
-        topBadge.style.display = 'none';
-      }
+      topBadge.textContent = count > 9 ? '9+' : String(count);
+      topBadge.style.display = count > 0 ? 'flex' : 'none';
     }
   }
+  window.PD_LOCAL_NOTIFICATIONS = notifications; // read by the Notifications screen
 
   function timeAgo(d){
     const mins = Math.round((Date.now() - d.getTime())/60000);
@@ -2455,8 +2482,8 @@
   }
 
   function openNotifPanel(){
-    renderNotifList();
-    document.getElementById('notifBackdrop').classList.add('show');
+    // Notifications now live on their own screen (merges local + live events).
+    goToScreen('notifications');
   }
   function ringBell(el){
     if(!el) return;
@@ -2523,6 +2550,8 @@
         d = addDays(d,1);
       }
     })();
+
+    window.hasActiveSubscription = hasActiveSubscription; // read by Account quick actions
 
     function pastCutoff(){
       return new Date().getHours() >= CUTOFF_HOUR;
