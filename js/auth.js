@@ -21,7 +21,8 @@ const USER_DATA_KEYS = [
   'pd_pending_payment',       // in-flight payment attempt
   'pd_payment_history',       // locally cached payment records
   'pd_unplaced_payment',      // verified payment awaiting order confirmation
-  'pd_flash'
+  'pd_flash',
+  'pd_notif_read_at'          // notifications screen: last "mark all read" time
 ];
 const LAST_UID_KEY = 'pd_last_uid'; // which account the cached data above belongs to
 
