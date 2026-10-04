@@ -23,29 +23,44 @@ export function setToken(token) {
   } catch (e) { /* storage unavailable (private mode / file://) */ }
 }
 
+// Decodes the JWT payload (UI use only - the server always re-verifies).
+function decodeTokenPayload(token) {
+  try {
+    const b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    return JSON.parse(atob(b64));
+  } catch (e) { return null; }
+}
+
+// A token that is missing, malformed or past its `exp` counts as logged out,
+// so a stale localStorage token can never make the UI look authenticated.
 export function isLoggedIn() {
-  return !!getToken();
+  const token = getToken();
+  if (!token) return false;
+  const payload = decodeTokenPayload(token);
+  if (!payload) return false;
+  if (payload.exp && payload.exp * 1000 <= Date.now()) return false;
+  return true;
+}
+
+// Fired when the backend rejects our token (401) or it has expired locally.
+// script.js listens and performs a clean logout + login prompt.
+export function notifySessionExpired() {
+  try { window.dispatchEvent(new CustomEvent('pd:session-expired')); } catch (e) { /* ignore */ }
 }
 
 // Decodes the role out of the JWT payload without needing a library -
 // just base64-decodes the middle segment. Not for security checks
 // (the server always re-verifies), only for showing/hiding UI.
 export function getTokenRole() {
-  const token = getToken();
-  if (!token) return null;
-  try {
-    const payload = JSON.parse(atob(token.split('.')[1]));
-    return payload.role || null;
-  } catch (e) { return null; }
+  if (!isLoggedIn()) return null;
+  const payload = decodeTokenPayload(getToken());
+  return (payload && payload.role) || null;
 }
 
 export function getTokenUserId() {
-  const token = getToken();
-  if (!token) return null;
-  try {
-    const payload = JSON.parse(atob(token.split('.')[1]));
-    return payload.id || null;
-  } catch (e) { return null; }
+  if (!isLoggedIn()) return null;
+  const payload = decodeTokenPayload(getToken());
+  return (payload && payload.id) || null;
 }
 
 class ApiError extends Error {
@@ -56,34 +71,71 @@ class ApiError extends Error {
   }
 }
 
+const REQUEST_TIMEOUT_MS = 20000;
+
+// Turns any backend/network failure into a message that is safe to show a
+// customer. 4xx validation messages written by our own backend (short plain
+// strings such as "Incorrect OTP") are passed through; anything that could
+// carry internals (5xx, HTML error pages, stack traces, long strings) is
+// replaced with a generic message.
+function friendlyMessage(status, data) {
+  const backendMsg = data && typeof data === 'object' && typeof data.error === 'string' ? data.error.trim() : '';
+  const looksSafe = backendMsg && backendMsg.length <= 140 && !/[<>{}]|stack|mongo|sql|at\s+\S+\s*\(|ECONN|ENOTFOUND|TypeError|ReferenceError/i.test(backendMsg);
+  switch (status) {
+    case 0:   return 'Network problem. Please check your internet and try again.';
+    case 400:
+    case 409:
+    case 422: return looksSafe ? backendMsg : 'Please check the details and try again.';
+    case 401: return looksSafe ? backendMsg : 'Your session has expired. Please log in again.';
+    case 403: return "You don't have permission to access this.";
+    case 404: return looksSafe ? backendMsg : 'The requested item could not be found.';
+    case 429: return 'Too many attempts. Please try again later.';
+    default:
+      if (status >= 500) return 'Something went wrong. Please try again.';
+      return looksSafe ? backendMsg : 'Something went wrong. Please try again.';
+  }
+}
+
 async function request(path, { method = 'GET', body, auth = true, isForm = false } = {}) {
   const headers = {};
   if (!isForm) headers['Content-Type'] = 'application/json';
+  let sentToken = null;
   if (auth) {
     const token = getToken();
-    if (token) headers['Authorization'] = `Bearer ${token}`;
+    if (token) { headers['Authorization'] = `Bearer ${token}`; sentToken = token; }
   }
 
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   let res;
   try {
     res = await fetch(`${API_BASE}${path}`, {
       method,
       headers,
-      body: body ? (isForm ? body : JSON.stringify(body)) : undefined
+      body: body ? (isForm ? body : JSON.stringify(body)) : undefined,
+      signal: controller.signal
     });
   } catch (networkErr) {
-    throw new ApiError('Network error - is the backend running?', 0, null);
+    throw new ApiError(friendlyMessage(0), 0, null);
+  } finally {
+    clearTimeout(timer);
   }
 
   let data = null;
   const text = await res.text();
   if (text) {
-    try { data = JSON.parse(text); } catch (e) { data = text; }
+    try { data = JSON.parse(text); } catch (e) { data = null; /* non-JSON (HTML error page etc.) is never shown */ }
   }
 
   if (!res.ok) {
-    const message = (data && data.error) || `Request failed (${res.status})`;
-    throw new ApiError(message, res.status, data);
+    // Expired/invalid token on an authenticated call: end the session cleanly
+    // (only if the token we sent is still the current one, so a late response
+    // from an old session can't log out a newer login).
+    if (res.status === 401 && sentToken && getToken() === sentToken) {
+      setToken(null);
+      notifySessionExpired();
+    }
+    throw new ApiError(friendlyMessage(res.status, data), res.status, data);
   }
   return data;
 }
