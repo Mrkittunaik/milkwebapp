@@ -1,220 +1,248 @@
-/* ============================================================
-   API CLIENT — connects deliverymilk (partner app) to the same
-   real backend as miLKadmin and milkwebapp (pakkabackend).
-   Endpoints match milkwebapp/js/api.js's deliveryApi/authApi/ordersApi.
-   ============================================================ */
-(function (global) {
-  "use strict";
+/* =========================================================
+   API CLIENT
+   Single source of truth for the backend URL, the auth token,
+   and every fetch() call the app makes. Every other module
+   imports from here instead of calling fetch() directly.
+========================================================= */
 
-  const API_BASE = (global.MILK_API_BASE || 'https://pakkabackend.onrender.com') + '/api';
-  const SOCKET_BASE = (global.MILK_API_BASE || 'https://pakkabackend.onrender.com');
-  const TOKEN_KEY = 'pd_delivery_token';
+// Change this one line when you deploy the backend (Render/Railway/VPS).
+// Keeping it in one place means the rest of the app never hardcodes a URL.
+export const API_BASE = window.PD_API_BASE || 'http://localhost:5000';
 
-  function getToken() {
-    try { return localStorage.getItem(TOKEN_KEY); } catch (e) { return null; }
+const TOKEN_KEY = 'pd_auth_token';
+
+export function getToken() {
+  try { return localStorage.getItem(TOKEN_KEY); }
+  catch (e) { return null; }
+}
+
+export function setToken(token) {
+  try {
+    if (token) localStorage.setItem(TOKEN_KEY, token);
+    else localStorage.removeItem(TOKEN_KEY);
+  } catch (e) { /* storage unavailable (private mode / file://) */ }
+}
+
+// Decodes the JWT payload (UI use only - the server always re-verifies).
+function decodeTokenPayload(token) {
+  try {
+    const b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    return JSON.parse(atob(b64));
+  } catch (e) { return null; }
+}
+
+// A token that is missing, malformed or past its `exp` counts as logged out,
+// so a stale localStorage token can never make the UI look authenticated.
+export function isLoggedIn() {
+  const token = getToken();
+  if (!token) return false;
+  const payload = decodeTokenPayload(token);
+  if (!payload) return false;
+  if (payload.exp && payload.exp * 1000 <= Date.now()) return false;
+  return true;
+}
+
+// Fired when the backend rejects our token (401) or it has expired locally.
+// script.js listens and performs a clean logout + login prompt.
+export function notifySessionExpired() {
+  try { window.dispatchEvent(new CustomEvent('pd:session-expired')); } catch (e) { /* ignore */ }
+}
+
+// Decodes the role out of the JWT payload without needing a library -
+// just base64-decodes the middle segment. Not for security checks
+// (the server always re-verifies), only for showing/hiding UI.
+export function getTokenRole() {
+  if (!isLoggedIn()) return null;
+  const payload = decodeTokenPayload(getToken());
+  return (payload && payload.role) || null;
+}
+
+export function getTokenUserId() {
+  if (!isLoggedIn()) return null;
+  const payload = decodeTokenPayload(getToken());
+  return (payload && payload.id) || null;
+}
+
+class ApiError extends Error {
+  constructor(message, status, body) {
+    super(message);
+    this.status = status;
+    this.body = body;
   }
-  function setToken(t) {
-    try { t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY); } catch (e) {}
+}
+
+const REQUEST_TIMEOUT_MS = 20000;
+
+// Turns any backend/network failure into a message that is safe to show a
+// customer. 4xx validation messages written by our own backend (short plain
+// strings such as "Incorrect OTP") are passed through; anything that could
+// carry internals (5xx, HTML error pages, stack traces, long strings) is
+// replaced with a generic message.
+function friendlyMessage(status, data) {
+  const backendMsg = data && typeof data === 'object' && typeof data.error === 'string' ? data.error.trim() : '';
+  const looksSafe = backendMsg && backendMsg.length <= 140 && !/[<>{}]|stack|mongo|sql|at\s+\S+\s*\(|ECONN|ENOTFOUND|TypeError|ReferenceError/i.test(backendMsg);
+  switch (status) {
+    case 0:   return 'Network problem. Please check your internet and try again.';
+    case 400:
+    case 409:
+    case 422: return looksSafe ? backendMsg : 'Please check the details and try again.';
+    case 401: return looksSafe ? backendMsg : 'Your session has expired. Please log in again.';
+    case 403: return "You don't have permission to access this.";
+    case 404: return looksSafe ? backendMsg : 'The requested item could not be found.';
+    case 429: return 'Too many attempts. Please try again later.';
+    default:
+      if (status >= 500) return 'Something went wrong. Please try again.';
+      return looksSafe ? backendMsg : 'Something went wrong. Please try again.';
   }
-  function getTokenRole() {
+}
+
+async function request(path, { method = 'GET', body, auth = true, isForm = false } = {}) {
+  const headers = {};
+  if (!isForm) headers['Content-Type'] = 'application/json';
+  let sentToken = null;
+  if (auth) {
     const token = getToken();
-    if (!token) return null;
-    try { return JSON.parse(atob(token.split('.')[1])).role || null; } catch (e) { return null; }
-  }
-  function getTokenUserId() {
-    const token = getToken();
-    if (!token) return null;
-    try { return JSON.parse(atob(token.split('.')[1])).id || null; } catch (e) { return null; }
+    if (token) { headers['Authorization'] = `Bearer ${token}`; sentToken = token; }
   }
 
-  const DEFAULT_TIMEOUT_MS = 20000;
-
-  // Normalises every failure into one Error shape the UI can switch on:
-  //   err.status  HTTP status (0 when the request never got an answer)
-  //   err.code    server error code ("PAYMENT_ALREADY_COMPLETED", "AUTH_EXPIRED"...) or
-  //               "NETWORK" / "TIMEOUT" when we never heard back
-  //   err.network true when the outcome of the request is UNKNOWN (it may or may not
-  //               have reached the server) - callers must re-check server state, not assume failure
-  function buildError(res, data, fallback) {
-    // supports both the legacy { error: "text", code } and the payment API { success:false, error:{code,message} }
-    const e = data && data.error;
-    const message = (e && typeof e === 'object' ? e.message : e) || fallback;
-    const err = new Error(message);
-    err.status = res.status;
-    err.code = (e && typeof e === 'object' ? e.code : data && data.code) || null;
-    return err;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  let res;
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      method,
+      headers,
+      body: body ? (isForm ? body : JSON.stringify(body)) : undefined,
+      signal: controller.signal
+    });
+  } catch (networkErr) {
+    throw new ApiError(friendlyMessage(0), 0, null);
+  } finally {
+    clearTimeout(timer);
   }
 
-  async function rawFetch(url, init, timeoutMs) {
-    const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-    const timer = ctrl ? setTimeout(() => ctrl.abort(), timeoutMs) : null;
-    try {
-      return await fetch(url, Object.assign({}, init, ctrl ? { signal: ctrl.signal } : {}));
-    } catch (e) {
-      const err = new Error(e && e.name === 'AbortError' ? 'The request timed out' : 'No internet connection');
-      err.status = 0;
-      err.network = true;
-      err.code = e && e.name === 'AbortError' ? 'TIMEOUT' : 'NETWORK';
-      throw err;
-    } finally {
-      if (timer) clearTimeout(timer);
+  let data = null;
+  const text = await res.text();
+  if (text) {
+    try { data = JSON.parse(text); } catch (e) { data = null; /* non-JSON (HTML error page etc.) is never shown */ }
+  }
+
+  if (!res.ok) {
+    // Expired/invalid token on an authenticated call: end the session cleanly
+    // (only if the token we sent is still the current one, so a late response
+    // from an old session can't log out a newer login).
+    if (res.status === 401 && sentToken && getToken() === sentToken) {
+      setToken(null);
+      notifySessionExpired();
     }
+    throw new ApiError(friendlyMessage(res.status, data), res.status, data);
   }
+  return data;
+}
 
-  async function request(method, path, body, opts) {
-    opts = opts || {};
-    const headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
-    const token = getToken();
-    if (token) headers['Authorization'] = 'Bearer ' + token;
-    const init = { method, headers, body: body !== undefined ? JSON.stringify(body) : undefined };
+export const api = {
+  get: (path) => request(path, { method: 'GET' }),
+  post: (path, body, opts = {}) => request(path, { method: 'POST', body, ...opts }),
+  put: (path, body) => request(path, { method: 'PUT', body }),
+  patch: (path, body) => request(path, { method: 'PATCH', body }),
+  del: (path) => request(path, { method: 'DELETE' }),
+  postForm: (path, formData) => request(path, { method: 'POST', body: formData, isForm: true })
+};
 
-    // Reads are safe to retry once on a network blip. Writes are NEVER blindly retried here:
-    // a payment write that timed out may have succeeded, so the caller re-reads server state
-    // (and reuses its Idempotency-Key) instead.
-    const attempts = method === 'GET' ? 2 : 1;
-    let res, lastErr;
-    for (let i = 0; i < attempts; i++) {
-      try { res = await rawFetch(API_BASE + path, init, opts.timeoutMs || DEFAULT_TIMEOUT_MS); lastErr = null; break; }
-      catch (e) { lastErr = e; if (i + 1 < attempts) await new Promise(r => setTimeout(r, 600)); }
-    }
-    if (lastErr) throw lastErr;
+/* ---------------- Auth ---------------- */
+export const authApi = {
+  sendOtp: (phone) => api.post('/api/auth/send-otp', { phone }, { auth: false }),
+  verifyOtp: (phone, code) => api.post('/api/auth/verify-otp', { phone, code }, { auth: false }),
+  google: (credential) => api.post('/api/auth/google', { credential }, { auth: false }),
+  // auth: true (default) — the backend now identifies the user from the JWT
+  // that /api/auth/google already returned, not from a client-sent id.
+  bindPhone: (phone) => api.post('/api/auth/bind-phone', { phone }),
+  adminLogin: (email, password) => api.post('/api/auth/admin/login', { email, password }, { auth: false }),
+  deliveryLogin: (phone, password) => api.post('/api/auth/delivery/login', { phone, password }, { auth: false }),
+  deliveryRegister: (payload) => api.post('/api/auth/delivery/register', payload, { auth: false })
+};
 
-    let data = null;
-    try { data = await res.json(); } catch (e) { /* no body */ }
-    if (!res.ok) throw buildError(res, data, `Request failed (${res.status})`);
-    return data;
-  }
+/* ---------------- Products ---------------- */
+export const productsApi = {
+  list: (params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return api.get(`/api/products${qs ? '?' + qs : ''}`);
+  },
+  getOne: (id) => api.get(`/api/products/${id}`)
+};
 
-  async function requestForm(path, formData) {
-    const headers = {};
-    const token = getToken();
-    if (token) headers['Authorization'] = 'Bearer ' + token;
-    const res = await rawFetch(API_BASE + path, { method: 'POST', headers, body: formData }, 60000);
-    let data = null;
-    try { data = await res.json(); } catch (e) {}
-    if (!res.ok) throw buildError(res, data, `Upload failed (${res.status})`);
-    return data;
-  }
+/* ---------------- Banners ---------------- */
+export const bannersApi = {
+  list: () => api.get('/api/banners') // public: active banners only, already sorted
+};
 
-  const get = (path) => request('GET', path);
-  const post = (path, body, opts) => request('POST', path, body, opts);
-  const put = (path, body) => request('PUT', path, body);
-  const patch = (path, body) => request('PATCH', path, body);
-  const del = (path) => request('DELETE', path);
+/* ---------------- Orders ---------------- */
+export const ordersApi = {
+  create: (payload) => api.post('/api/orders', payload),
+  list: (status) => api.get(`/api/orders${status ? '?status=' + status : ''}`),
+  getOne: (id) => api.get(`/api/orders/${id}`),
+  updateStatus: (id, status) => api.patch(`/api/orders/${id}/status`, { status }),
+  assign: (id, deliveryBoyId) => api.patch(`/api/orders/${id}/assign`, { deliveryBoyId }),
+  offer: (id, radiusKm) => api.patch(`/api/orders/${id}/offer`, { radiusKm }),
+  respond: (id, action) => api.patch(`/api/orders/${id}/respond`, { action })
+};
 
-  const Api = {
-    getToken, setToken, getTokenRole, getTokenUserId,
+/* ---------------- Users ---------------- */
+export const usersApi = {
+  me: () => api.get('/api/users/me'),
+  updateMe: (payload) => api.put('/api/users/me', payload),
+  addAddress: (addr) => api.post('/api/users/me/addresses', addr),
+  deleteAddress: (addrId) => api.del(`/api/users/me/addresses/${addrId}`),
+  status: (id) => api.get(`/api/users/${id}/status`)
+};
 
-    // ---- auth (delivery partner) ----
-    deliveryLogin: (phone, password) => post('/auth/delivery/login', { phone, password }),
-    deliveryRegister: (payload) => post('/auth/delivery/register', payload),
+/* ---------------- Plans & Subscriptions ---------------- */
+export const plansApi = {
+  list: () => api.get('/api/plans')
+};
 
-    // ---- self profile ----
-    me: () => get('/delivery-boys/me'),
-    updateLocation: (lat, lng) => patch('/delivery-boys/me/location', { lat, lng }),
-    // The backend only exposes image upload at /delivery-boys/:id/image
-    // (there's no "/me/image" route) - the caller must pass their own
-    // DeliveryBoy _id, e.g. from a cached Api.me() result. requireRole
-    // allows 'delivery' to hit this on their own id (see deliveryBoyRoutes.js).
-    uploadMyImage: (driverId, file, field) => {
-      const form = new FormData();
-      form.append('image', file);
-      form.append('field', field || 'avatar');
-      return requestForm(`/delivery-boys/${driverId}/image`, form);
-    },
+export const subscriptionsApi = {
+  create: (payload) => api.post('/api/subscriptions', payload),
+  list: () => api.get('/api/subscriptions'),
+  getOne: (id) => api.get(`/api/subscriptions/${id}`),
+  update: (id, payload) => api.put(`/api/subscriptions/${id}`, payload),
+  pause: (id) => api.patch(`/api/subscriptions/${id}/pause`),
+  resume: (id) => api.patch(`/api/subscriptions/${id}/resume`),
+  skipWindow: (id) => api.get(`/api/subscriptions/${id}/skip-window`), // tells UI if today's cutoff has passed
+  skipDate: (id, date) => api.post(`/api/subscriptions/${id}/skip`, { date }), // date: 'YYYY-MM-DD'
+  unskipDate: (id, date) => api.del(`/api/subscriptions/${id}/skip/${date}`)
+};
 
-    // ---- orders ----
-    // "my" orders = orders assigned to / offered to this partner. The
-    // backend scopes /orders to the caller's role via the JWT, same as
-    // it does for the customer webapp and the admin panel. This list
-    // includes both admin-assigned stops and broadcast-accepted ones.
-    listMyOrders: () => get('/orders'),
-    getOrder: (id) => get(`/orders/${id}`),
-    respondToOrder: (id, action) => patch(`/orders/${id}/respond`, { action }), // action: 'accept' | 'reject'
-    // extra: e.g. { collectedCash: true } when the rider confirms cash was taken while a UPI QR was still open
-    updateOrderStatus: (id, status, extra) => patch(`/orders/${id}/status`, Object.assign({ status }, extra || {})),
+/* ---------------- Coupons ---------------- */
+export const couponsApi = {
+  validate: (code, total) => api.get(`/api/coupons/validate?code=${encodeURIComponent(code)}&total=${total}`)
+};
 
-    // ---- payments (server is the single source of truth; the app never reports "paid") ----
-    // A fresh key per user-initiated "show QR" action. Re-send the SAME key if the outcome of a
-    // request is unknown (timeout/offline) so the server returns the original attempt instead of a second one.
-    newIdempotencyKey: () => (global.crypto && global.crypto.randomUUID)
-      ? global.crypto.randomUUID()
-      : 'k-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 12),
-    // What to render for this order right now: { order, payment|null, canPay, reason }
-    getOrderPayment: (orderId, refresh) => get(`/orders/${orderId}/payment${refresh ? '?refresh=1' : ''}`),
-    getPayment: (paymentId, refresh) => get(`/payments/${paymentId}${refresh ? '?refresh=1' : ''}`),
-    // create-or-resume: the amount is decided by the server, only the order id is sent
-    startPayment: (orderId, idempotencyKey) => post('/payments', { orderId }, { headers: { 'Idempotency-Key': idempotencyKey } }),
-    // cancels the payment ATTEMPT only; the order stays payable
-    cancelPayment: (paymentId) => post(`/payments/${paymentId}/cancel`),
+/* ---------------- Payments ---------------- */
+export const paymentsApi = {
+  // Server re-prices the cart itself from items/couponCode - it never
+  // trusts a client-sent amount, so don't pass one.
+  createOrder: (items, couponCode) => api.post('/api/payments/create-order', { items, couponCode }),
+  verify: (razorpay_order_id, razorpay_payment_id, razorpay_signature) =>
+    api.post('/api/payments/verify', { razorpay_order_id, razorpay_payment_id, razorpay_signature })
+};
 
-    // ---- subscriptions (bottle-exchange route) ----
-    // All subscriptions the backend will hand back for this caller. There's
-    // no rider-specific filter on the backend yet (GET /subscriptions only
-    // scopes by customer for role:customer) - callers with role:delivery
-    // get every subscription back and must filter client-side by
-    // sub.deliveryBoy === their own id (see script.js loadSubscriptionsFromServer).
-    listSubscriptions: () => get('/subscriptions'),
-    // Completes a subscription stop with dual proof-of-exchange photos
-    // (new bottle handed over + old bottle collected) instead of the
-    // single generic proof used for one-off product orders. Matches the
-    // real backend route: POST /subscriptions/:id/log-delivery, multipart
-    // fields newBottlePhoto/oldBottlePhoto, body quantityCollected/
-    // shortfall/bottlesGiven (see subscriptionController.logDelivery).
-    completeBottleExchange: (subId, data) => {
-      const form = new FormData();
-      if (data.newBottlePhoto) form.append('newBottlePhoto', data.newBottlePhoto);
-      if (data.oldBottlePhoto) form.append('oldBottlePhoto', data.oldBottlePhoto);
-      form.append('quantityCollected', data.quantityCollected);
-      if (data.shortfall !== undefined) form.append('shortfall', data.shortfall);
-      if (data.bottlesGiven !== undefined) form.append('bottlesGiven', data.bottlesGiven);
-      return requestForm(`/subscriptions/${subId}/log-delivery`, form);
-    },
-    // Logs that the customer didn't have the old bottle(s) ready today.
-    // The backend has no dedicated "not returned" endpoint - the real
-    // mechanism is log-delivery with a shortfall count, which is what
-    // bumps Subscription.pendingBottles server-side (see logDelivery).
-    reportBottleNotReturned: (subId, shortfallQty) =>
-      Api.completeBottleExchange(subId, { quantityCollected: 0, shortfall: shortfallQty, bottlesGiven: 0 }),
-    // Raises a ticket for admin review (broken/damaged bottle claimed by
-    // customer). Admin approving it is what actually debits the wallet -
-    // this call only files the claim. Matches the real backend route:
-    // POST /bottle-tickets (role:delivery), multipart field "photo".
-    raiseBottleTicket: (subId, data) => {
-      const form = new FormData();
-      if (data.photo) form.append('photo', data.photo);
-      form.append('subscription', subId);
-      form.append('reason', data.reason);
-      if (data.note) form.append('note', data.note);
-      return requestForm('/bottle-tickets', form);
-    },
+/* ---------------- Wallet ----------------
+   INTEGRATION POINT: the backend has no wallet routes yet, so nothing calls
+   these. js/account-hub.js's walletService switches to them once its
+   BACKEND_READY flag is set to true. Paths are proposals - adjust to the API
+   you build. Top-ups must be priced and confirmed server-side, like
+   paymentsApi.createOrder (never trust a client-sent balance). */
+export const walletApi = {
+  get: () => api.get('/api/wallet'),                              // -> { balance, currency }
+  transactions: () => api.get('/api/wallet/transactions'),        // -> [{ id, type:'credit'|'debit', amount, title, status, createdAt, ref }]
+  createTopUp: (amount) => api.post('/api/wallet/top-up', { amount }) // -> same shape as paymentsApi.createOrder
+};
 
-    // ---- realtime ----
-    // Mirrors miLKadmin/api.js's retry pattern for a slow/cold-starting
-    // backend, since this app can't assume socket.io has finished loading.
-    connectSocket(handlers, onReady) {
-      let attempts = 0;
-      const maxAttempts = 15;
-      const tryConnect = () => {
-        if (typeof io === 'undefined') {
-          attempts++;
-          if (attempts >= maxAttempts) {
-            console.warn('Socket.IO client still not loaded after retries — staying on polling.');
-            return;
-          }
-          setTimeout(tryConnect, 2000);
-          return;
-        }
-        const socket = io(SOCKET_BASE, { auth: { token: getToken() } });
-        Object.keys(handlers || {}).forEach(evt => socket.on(evt, handlers[evt]));
-        if (typeof onReady === 'function') {
-          socket.on('connect', () => onReady(socket));
-        }
-      };
-      tryConnect();
-      return null;
-    }
-  };
+/* ---------------- Delivery boy (self) ---------------- */
+export const deliveryApi = {
+  me: () => api.get('/api/delivery-boys/me'),
+  updateLocation: (lat, lng) => api.patch('/api/delivery-boys/me/location', { lat, lng })
+};
 
-  global.Api = Api;
-})(window);
+export { ApiError };
